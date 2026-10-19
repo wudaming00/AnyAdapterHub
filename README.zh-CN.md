@@ -1,5 +1,7 @@
 # AnyAdapter Hub · 万能适配
 
+当前安全版本使用 Windows 当前用户 DPAPI 加密凭据和固定证书 HTTPS；旧安装需先按[加密迁移说明](docs/SECURE_SETUP.md)迁移。适配器和增强功能按需启用；Linux/macOS 尚无生产密钥存储后端。
+
 简称 **AnyAdapter**。
 
 让 Agent 在用户授权范围内连接、观察和控制家庭设备。它是独立运行的本地中枢，使用 HTTP、SSE 和 JavaScript SDK；Collie 或其他 Agent 可以作为客户端接入。MCP 保留为早期可选入口，中枢不依赖它。
@@ -26,8 +28,10 @@ ECOVACS X11 的 US/Windows 限制、既有加密登录前提及单设备绑定�
 
 ```sh
 npm ci --ignore-scripts
+npm run adapter:lg:install
 npm run check
-node lg-tv.mjs pair --host <TV_LAN_IP> --profile control
+node lg-tv.mjs certificate --host <TV_LAN_IP>
+node lg-tv.mjs pair --host <TV_LAN_IP> --certificate-pin <REVIEWED_SHA256_HEX> --profile control
 node device-hub.mjs init --tv-config .lg-tv.local.json --host <TV_LAN_IP>
 node device-hub.mjs serve
 ```
@@ -50,11 +54,12 @@ node device-hub.mjs events
 ## 程序接入
 
 ```js
-import { readFile } from 'node:fs/promises';
+import { readJson } from './lib/hub/config.mjs';
+import { resolveCredential } from './lib/security/credentials.mjs';
 import { HubClient } from './lib/hub/client.mjs';
 
 // Use the scoped client credential, never owner.json.
-const hub = new HubClient(JSON.parse(await readFile('.device-hub/client.json', 'utf8')));
+const hub = new HubClient(await resolveCredential(await readJson('.device-hub/client.json')));
 const state = await hub.state('living-room-tv');
 const result = await hub.execute('living-room-tv', 'audio.volume.set', { volume: 15 }, {
   idempotencyKey: 'user-request-123-volume',

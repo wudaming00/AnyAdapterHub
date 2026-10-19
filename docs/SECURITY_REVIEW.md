@@ -47,7 +47,7 @@ Authorization is capability-based, not a semantic proof of intent. Broad navigat
 | Duplicate or ambiguous writes | Client/key uniqueness and request hash, conflict rejection, no replay/retry | Different keys are different commands. Upstream devices are not transactional; partial effects cannot be undone by idempotency. |
 | Cross-client disclosure | Requester ownership for operation lookup, device-scoped reads, sanitized errors/state, separate frames | `screen.read` permits retained frames for its device. The screen itself can contain private content. |
 | Malicious profile/evidence | Strict bounded parser/schema, exact identities, fixed capability references, no scripts/endpoints | Evidence can be fabricated or mistaken; executable adapters/dependencies are trusted code. |
-| Callback substitution | Fixed bridge calls/routes, random per-run token, exact TV source, time/byte limits, owned cleanup | HTTP and unpinned WSS do not defeat every LAN middleperson or impersonation. |
+| Callback substitution | Fixed bridge calls/routes, random per-run token, exact TV source, time/byte limits, owned cleanup | Optional HTTP callback/media legs remain unencrypted. Pinned LG WSS still has initial-trust and factory-shared-key limitations. |
 | File exfiltration by casting | Explicit roots, realpath/type checks, same validated file handle, source/token route | OS/filesystem integrity is assumed; intentional exports are outside frame retention. |
 | Prompt injection | Device-output projections; outputs cannot define grants, commands or destinations | The Hub cannot guarantee model reasoning; a client can misuse authority already granted to it. |
 | Resource exhaustion | Bounded bodies/headers/concurrency, queues, callbacks, frames and journal | No sustained rate limit or lifetime operation database quota; authorized flooding can exhaust disk. |
@@ -68,7 +68,7 @@ Operation states remain conservative: a failure after dispatch checks can be `un
 
 The Hub directory is new/empty at initialization or must have a valid existing Hub marker. Links/junctions and unexpected immediate children are rejected. POSIX ownership/modes and Windows current-user+SYSTEM DACLs are checked. Initialization rolls back only its newly created files. These controls do not isolate same-account code or administrators. External credential-file permissions need their own review.
 
-Client tokens are random and persisted as hashes. Owner/CLI credentials and LG pairing keys still rely on OS file access rather than a keychain. The optional ECOVACS worker uses Windows DPAPI, a fixed worker path and separately installed version-pinned SDK. A worker process is not a sandbox against trusted same-user code. Cloud credential refresh is an expected private-file write; it does not authorize another selected device.
+Client tokens are random and persisted as hashes. Hub owner/client files, LG pairing keys and the Hub TLS private key now use Windows CurrentUser DPAPI with purpose binding, in addition to private ACLs. The optional ECOVACS worker retains its own DPAPI enrollment, fixed worker path and separately installed version-pinned SDK. A worker process is not a sandbox against same-user code. Cloud credential refresh is an expected private-file write; it does not authorize another selected device. SQLite state, events and images are not content-encrypted by this credential change; their privacy still relies on the private directory, retention and OS/storage protection.
 
 Images are private content. Retained frames are separate from ordinary events, expire within five minutes and are bounded to five/device and 32 MiB total. Expiry immediately denies reads; logical pruning is periodic. `secure_delete` is not forensic erasure. WAL, backups, image exports and already delivered content need separate retention handling. Never publish household screenshots/maps, account/device identifiers, callback URLs, pairing keys or raw diagnostics.
 
@@ -96,7 +96,9 @@ This map describes intended test coverage, not every possible attack. No cross-p
 
 The first public scan of revision `3e3179ca075eeff809efdbdaac331886e8893f36` reported 15 alerts. The following records the assigned transport/filesystem/data-flow findings, rather than claiming that the complete scan is clean. Static findings require path-specific review; an expected application data flow does not cancel a separate weakness on that path. No alert was automatically dismissed as part of this review.
 
-### Certificate validation: four real remaining risks
+### Certificate validation: historical findings and coordinated hardening
+
+The current security revision replaces these four scattered bypass paths with required LG certificate pin validation before HTTP/SSAP/key transmission, pinned pointer/capture connections, and CA-or-explicit-pin public discovery. [security-tv-tls.test.mjs](../test/security-tv-tls.test.mjs) verifies real loopback TLS and no request/key delivery on mismatches. The centralized self-signed-TV connector deliberately performs its own mandatory pin check before releasing the socket; static analysis may still flag that custom trust boundary and needs manual review. See [secure setup](SECURE_SETUP.md) for TOFU, shared factory-key limitations and legacy observer/media channels. This records source changes and tests; it does not assert GitHub alerts have closed or that real hardware has passed the new transport.
 
 Alerts **#4–#7** identify actual certificate-validation bypasses:
 
@@ -107,9 +109,9 @@ Alerts **#4–#7** identify actual certificate-validation bypasses:
 | #6 | `lib/ssap.mjs`, secure SSAP connection | The session accepts an unverified TV certificate and can send pairing material and control requests. A LAN middleperson remains a real confidentiality/control risk. |
 | #7 | `lib/tv-controller.mjs`, pointer WSS connection | Same literal TV host and fixed pointer framing constrain routing/commands but do not authenticate a WSS peer's certificate. |
 
-These remain **open security risks**. A private IP, paired client key, `secure: true` or encrypted-but-unauthenticated connection is not verified device identity. Some paths also use plaintext HTTP/WS or unauthenticated DLNA. The development preview must not be represented as production-secure or safe against a hostile LAN.
+Those were **real risks in the scanned revision**. A private IP, paired client key, `secure: true` or encrypted-but-unauthenticated connection is not verified device identity. Optional observer/media paths still use plaintext HTTP and unauthenticated DLNA. The development preview must not be represented as production-secure or safe against a hostile LAN.
 
-No hurried TLS migration was made in this fix because LG local certificates and existing installation behavior require a coordinated compatibility change. A suitable follow-up is verified TLS by default, with owner-provisioned trust/pinning or a conspicuous, explicit local compatibility opt-in; it must cover SSAP, pointer, capture and discovery together and preserve clear failure behavior. An opt-in exception would remain an exception, not a reason to describe an insecure connection as authenticated. Changing one `rejectUnauthorized` flag would not secure the other protocols.
+That initial scan fix deferred coordinated TLS migration. The current revision supplies it together with DPAPI-protected credentials and pinned Hub HTTPS; it intentionally refuses legacy plaintext control rather than supplying a production downgrade flag. Existing devices may need explicit certificate enrollment before reconnecting. Pinning still cannot prove unique device identity when a vendor shares private keys.
 
 ### Filesystem races: narrow hardening and remaining assumptions
 

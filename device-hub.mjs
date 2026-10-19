@@ -6,9 +6,10 @@ import { HubStore } from './lib/hub/store.mjs';
 import { HubRuntime, tokenHash } from './lib/hub/runtime.mjs';
 import { HubServer } from './lib/hub/server.mjs';
 import { HubClient } from './lib/hub/client.mjs';
-import { initializeHub, addHubDevice, loadHubConfig, protectHubHome, readJson, writePrivateJson } from './lib/hub/config.mjs';
-import { LGWebOSAdapter } from './lib/adapters/lg-webos.mjs';
-import { ECOVACSX11Adapter } from './lib/adapters/ecovacs-x11.mjs';
+import { initializeHub, addHubDevice, loadHubConfig, protectHubHome, readJson, writePrivateJson, setAdapterEnabled, setDeviceFeatures } from './lib/hub/config.mjs';
+import { createAdapter, adapterMetadata } from './lib/hub/adapters.mjs';
+import { resolveCredential } from './lib/security/credentials.mjs';
+import { openHubIdentity } from './lib/security/hub-identity.mjs';
 import { ACTIONS, READ_CAPABILITIES } from './lib/hub/policy.mjs';
 
 const HELP = `AnyAdapter Hub local device hub
@@ -16,6 +17,11 @@ const HELP = `AnyAdapter Hub local device hub
   node device-hub.mjs init --ecovacs-config FILE [--id vacuum] [--port 8765]
   node device-hub.mjs add --ecovacs-config FILE [--id vacuum] [--home .device-hub]
   node device-hub.mjs serve [--home .device-hub]
+  node device-hub.mjs init [--home .device-hub]  (empty core, no adapters)
+  node device-hub.mjs adapters
+  node device-hub.mjs enable|disable --adapter lg-webos|ecovacs-x11
+  node device-hub.mjs features --device ID --features observer,media  (empty string disables both)
+  node device-hub.mjs migrate-security [--tv-config FILE] [--legacy-tv-config FILE]
   node device-hub.mjs stop [--home .device-hub]
   node device-hub.mjs status|capabilities [--device living-room-tv] [--credential FILE]
   node device-hub.mjs call --action ACTION --args JSON [--key IDEMPOTENCY_KEY] [--device ID]
@@ -25,14 +31,14 @@ const HELP = `AnyAdapter Hub local device hub
   node device-hub.mjs grants|revoke --grant-id ID
 
 All client commands default to .device-hub/client.json. Grant management uses owner.json.
-Grant --caps all is an explicit owner choice; tokens are saved to private files, never printed.
+Grant --caps all is an explicit owner choice; tokens use OS-encrypted files, never printed.
 init/add import references to owner-enrolled local configuration; they never silently pair devices.
 add requires a restart before the running hub can use its new device registry.
-serve binds 127.0.0.1 only. It does not install OS startup tasks.
+serve uses pinned HTTPS on 127.0.0.1 only. It does not install OS startup tasks.
 `;
 function parse(argv) {
   const [command = 'help', ...rest] = argv; const options = {};
-  const allowed = ['home', 'tv-config', 'ecovacs-config', 'host', 'id', 'label', 'port', 'credential', 'device', 'action', 'args', 'key', 'out', 'after', 'caps', 'hours', 'grant-id'];
+  const allowed = ['home', 'tv-config', 'legacy-tv-config', 'ecovacs-config', 'host', 'id', 'label', 'port', 'credential', 'device', 'action', 'args', 'key', 'out', 'after', 'caps', 'hours', 'grant-id', 'adapter', 'features'];
   for (let i = 0; i < rest.length; i += 2) {
     if (!rest[i].startsWith('--') || !allowed.includes(rest[i].slice(2)) || rest[i + 1] === undefined || Object.hasOwn(options, rest[i].slice(2))) throw new Error('Invalid arguments.');
     options[rest[i].slice(2)] = rest[i + 1];
@@ -43,23 +49,31 @@ export async function main(argv = process.argv.slice(2)) {
   const { command, options } = parse(argv);
   if (command === 'help' || command === '--help') { process.stdout.write(HELP); return; }
   const home = path.resolve(options.home ?? '.device-hub');
+  if (command === 'adapters') { process.stdout.write(JSON.stringify(adapterMetadata(), null, 2) + '\n'); return; }
+  if (['enable', 'disable'].includes(command)) { process.stdout.write(JSON.stringify(await setAdapterEnabled(home, options.adapter, command === 'enable')) + '\n'); return; }
+  if (command === 'features') { if (options.features === undefined || !options.device) throw new Error('Device and features required.'); process.stdout.write(JSON.stringify(await setDeviceFeatures(home, options.device, options.features ? options.features.split(',') : [])) + '\n'); return; }
+  if (command === 'migrate-security') {
+    const { migrateSecurity } = await import('./lib/security/migrate.mjs');
+    process.stdout.write(JSON.stringify(await migrateSecurity({ home, tvConfigPaths: [options['tv-config'], options['legacy-tv-config']].filter(Boolean) })) + '\n'); return;
+  }
   if (command === 'init' || command === 'add') {
     const enroll = command === 'init' ? initializeHub : addHubDevice;
     process.stdout.write(JSON.stringify(await enroll({ home, tvConfigPath: options['tv-config'], ecovacsConfigPath: options['ecovacs-config'], host: options.host,
-      id: options.id, label: options.label, port: options.port === undefined ? undefined : Number(options.port) })) + '\n'); return;
+      id: options.id, label: options.label, features: options.features ? options.features.split(',') : [], port: options.port === undefined ? undefined : Number(options.port) })) + '\n'); return;
   }
   if (command === 'serve') {
     const config = await loadHubConfig(home);
-    const owner = await readJson(path.join(home, 'owner.json'));
-    if (!/^[A-Za-z0-9_-]{32,256}$/.test(owner.token ?? '') || owner.url !== `http://127.0.0.1:${config.port}`) throw new Error('Owner credential and hub origin must match.');
+    const owner = await resolveCredential(await readJson(path.join(home, 'owner.json')));
+    const identity = await openHubIdentity(await readJson(path.join(home, 'identity.json')));
+    if (owner.url !== `https://127.0.0.1:${config.port}` || owner.certificatePin !== identity.certificatePin) throw new Error('Owner credential and hub TLS identity must match.');
     const store = new HubStore({ filePath: path.join(home, 'state.sqlite') });
-    const runtime = new HubRuntime({ store, ownerTokenHash: tokenHash(owner.token), devices: config.devices.map(device => ({
-      ...device, adapter: device.adapterName === 'lg-webos' ? new LGWebOSAdapter({ deviceId: device.id, config: device.config })
-        : new ECOVACSX11Adapter({ deviceId: device.id, config: device.config }) })) });
+    const devices = [];
+    for (const device of config.devices) devices.push({ ...device, adapter: await createAdapter(device) });
+    const runtime = new HubRuntime({ store, ownerTokenHash: tokenHash(owner.token), devices });
     let server;
     let stopping = false;
     const stop = async () => { if (stopping) return; stopping = true; runtime.beginClose(); await server.close(); await runtime.close(); };
-    server = new HubServer({ runtime, onShutdown: stop });
+    server = new HubServer({ runtime, onShutdown: stop, tls: { key: identity.key, cert: identity.cert } });
     try { const address = await server.listen({ port: config.port });
       // Reserve the loopback port before recovery. Start synchronously before
       // another await so requests cannot race startup recovery of queued work.
@@ -74,7 +88,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const ownerCommand = ['grant', 'grants', 'revoke', 'stop'].includes(command);
   if (ownerCommand) await protectHubHome(home);
-  const credential = await readJson(options.credential ?? path.join(home, ownerCommand ? 'owner.json' : 'client.json'));
+  const credential = await resolveCredential(await readJson(options.credential ?? path.join(home, ownerCommand ? 'owner.json' : 'client.json')));
   const client = new HubClient(credential); const deviceId = options.device ?? 'living-room-tv';
   let result;
   switch (command) {
@@ -102,7 +116,7 @@ export async function main(argv = process.argv.slice(2)) {
         capabilities: available ? [...available.read, ...Object.keys(available.actions)] : options.caps.split(','),
         expiresAt: new Date(Date.now() + hours * 3600000).toISOString() });
       // Default destination is inside the already protected hub home. External files require their own private parent ACL.
-      try { await writePrivateJson(destination, { url: credential.url, token: issued.token, grantId: issued.grant.id }); }
+      try { await writePrivateJson(destination, { url: credential.url, certificate: credential.certificate, certificatePin: credential.certificatePin, token: issued.token, grantId: issued.grant.id }); }
       catch (error) {
         try { await client.revokeGrant(issued.grant.id); }
         catch { error.orphanGrantId = issued.grant.id; }

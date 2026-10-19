@@ -1,6 +1,6 @@
 {
   "name": "anyadapter-hub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A local device hub for agents: explicit permissions, observable outcomes, community adapters",
@@ -14,10 +14,16 @@
     "check:profiles": "node scripts/check-profiles.mjs",
     "check:package": "node scripts/check-package.mjs",
     "check": "npm test && npm run check:profiles && npm run check:package && npm run check:public",
-    "check:public": "node scripts/check-public.mjs"
+    "check:public": "node scripts/check-public.mjs",
+    "adapter:lg:install": "npm install --no-save --package-lock=false --ignore-scripts ws@8.22.0"
   },
-  "dependencies": {
+  "peerDependencies": {
     "ws": "8.22.0"
+  },
+  "peerDependenciesMeta": {
+    "ws": {
+      "optional": true
+    }
   },
   "license": "MIT AND GPL-3.0-or-later",
   "files": [
@@ -47,7 +53,8 @@
     "optional/ecovacs/requirements.txt",
     "optional/ecovacs/LICENSE",
     "optional/ecovacs/README.md",
-    "optional/ecovacs/provenance.json"
+    "optional/ecovacs/provenance.json",
+    "optional/lg-webos/README.md"
   ],
   "repository": {
     "type": "git",

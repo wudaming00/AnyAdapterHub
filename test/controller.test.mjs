@@ -340,7 +340,7 @@ test('pointer is lazy, shared across concurrent commands, and sends exact termin
   assert.deepEqual(sockets[0].frames, [
     'type:button\nname:HOME\n\n', 'type:move\ndx:10\ndy:-20\ndown:0\n\n', 'type:click\n\n', 'type:scroll\ndx:0\ndy:3\n\n',
   ]);
-  assert.equal(sockets[0].options.rejectUnauthorized, false);
+  assert.notEqual(sockets[0].options.rejectUnauthorized, false);
   assert.deepEqual(results[0], { sent: true, transport: 'pointer', acknowledged: false });
   controller.close();
   assert.equal(sockets[0].readyState, 3);
@@ -471,6 +471,7 @@ test('DLNA CLI routes skip SSAP registration and carry the saved network interfa
   } } }));
   let registrations = 0; const calls = []; const logs = []; const optionsSeen = [];
   const execution = { baseDirectory: directory, stdout: (value) => logs.push(value), stderr: (value) => logs.push(value),
+    resolveKey: async profile => profile.clientKey, protectKey: async profile => profile,
     controllerFactory: (options) => {
       optionsSeen.push(options);
       return { connect: async () => { registrations++; throw new Error('Must not register SSAP'); },

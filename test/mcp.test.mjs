@@ -675,29 +675,29 @@ test('private config selects the exact profile, honors explicit host and never w
     '192.168.1.3': { clientKey: 'second-key' },
   } };
   const readFile = async () => JSON.stringify(saved);
-  const selected = await loadPrivateConfig({ readFile, host: '192.168.1.2', env: { LG_TV_HOST: '192.168.1.3' } });
+  const selected = await loadPrivateConfig({ resolveKey: async profile => profile.clientKey, readFile, host: '192.168.1.2', env: { LG_TV_HOST: '192.168.1.3' } });
   assert.equal(selected.clientKey, 'first-key');
   assert.equal(selected.mac, config.mac);
   assert.equal(selected.allowTemporaryObserver, true);
   assert.deepEqual(selected.mediaRoots, config.mediaRoots);
   assert.deepEqual(selected.allowedUrlOrigins, ['https://example.org']);
   assert.deepEqual(selected.registrationManifest, registrationManifest);
-  const other = await loadPrivateConfig({ readFile, env: { LG_TV_HOST: '192.168.1.3' } });
+  const other = await loadPrivateConfig({ resolveKey: async profile => profile.clientKey, readFile, env: { LG_TV_HOST: '192.168.1.3' } });
   assert.equal(other.clientKey, 'second-key');
   assert.equal(other.allowTemporaryObserver, false);
   assert.deepEqual(other.mediaRoots, []);
   assert.deepEqual(other.allowedUrlOrigins, []);
-  await assert.rejects(loadPrivateConfig({ readFile, env: {} }), /Select a private/);
-  await assert.rejects(loadPrivateConfig({ readFile, host: '8.8.8.8', env: {} }), /Select a private/);
-  await assert.rejects(loadPrivateConfig({ readFile: async () => '{broken', env: {} }), /Unable to read/);
-  const sole = await loadPrivateConfig({ readFile: async () => JSON.stringify({ devices: { [config.host]: { clientKey: 'sole' } } }), env: {} });
+  await assert.rejects(loadPrivateConfig({ resolveKey: async profile => profile.clientKey, readFile, env: {} }), /Select a private/);
+  await assert.rejects(loadPrivateConfig({ resolveKey: async profile => profile.clientKey, readFile, host: '8.8.8.8', env: {} }), /Select a private/);
+  await assert.rejects(loadPrivateConfig({ resolveKey: async profile => profile.clientKey, readFile: async () => '{broken', env: {} }), /Unable to read/);
+  const sole = await loadPrivateConfig({ resolveKey: async profile => profile.clientKey, readFile: async () => JSON.stringify({ devices: { [config.host]: { clientKey: 'sole' } } }), env: {} });
   assert.equal(sole.clientKey, 'sole');
   for (const mediaRoots of [null, 'path', ['relative'], ['\\\\server\\share']]) {
-    await assert.rejects(loadPrivateConfig({ readFile: async () => JSON.stringify({ devices: { [config.host]: { clientKey: 'key', mediaRoots } } }), env: {} }), /mediaRoots/);
+    await assert.rejects(loadPrivateConfig({ resolveKey: async profile => profile.clientKey, readFile: async () => JSON.stringify({ devices: { [config.host]: { clientKey: 'key', mediaRoots } } }), env: {} }), /mediaRoots/);
   }
   for (const allowedUrlOrigins of [null, 'https://example.org', ['https://*.example.org'], ['https://user:secret@example.org'],
     ['https://example.org/private'], ['https://example.org?token=secret'], ['https://example.org#fragment'], ['file:///tmp'], ['http://127.0.0.1']]) {
-    await assert.rejects(loadPrivateConfig({ readFile: async () => JSON.stringify({ devices: { [config.host]: { clientKey: 'key', allowedUrlOrigins } } }), env: {} }), /origin|allowedUrlOrigins/);
+    await assert.rejects(loadPrivateConfig({ resolveKey: async profile => profile.clientKey, readFile: async () => JSON.stringify({ devices: { [config.host]: { clientKey: 'key', allowedUrlOrigins } } }), env: {} }), /origin|allowedUrlOrigins/);
   }
 });
 

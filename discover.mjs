@@ -6,6 +6,7 @@ import https from 'node:https';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createPinnedTVAgent } from './lib/security/tv-tls.mjs';
 
 const TARGETS = [
   'urn:lge-com:service:webos-second-screen:1',
@@ -80,12 +81,15 @@ export function checkedLocalUrl(value, expectedHost) {
   return url;
 }
 
-export function getLocalText(value, expectedHost) {
+export function getLocalText(value, expectedHost, { certificatePin } = {}) {
   const url = checkedLocalUrl(value, expectedHost);
+  const agent = url.protocol === 'https:' && certificatePin !== undefined
+    ? createPinnedTVAgent({ host: url.hostname, certificatePin, timeoutMs: 3000 }) : undefined;
   return new Promise((resolve, reject) => {
     const request = (url.protocol === 'https:' ? https : http).get(url, {
       timeout: 3000,
-      ...(url.protocol === 'https:' ? { rejectUnauthorized: false } : {}),
+      ...(agent ? { agent } : {}),
+      ...(url.protocol === 'https:' ? { rejectUnauthorized: true } : {}),
     }, response => {
       if (response.statusCode !== 200) {
         response.resume();
@@ -104,6 +108,7 @@ export function getLocalText(value, expectedHost) {
     });
     request.on('timeout', () => request.destroy(new Error('HTTP timeout')));
     request.on('error', reject);
+    request.on('close', () => agent?.destroy());
   });
 }
 
@@ -206,16 +211,16 @@ export function parseStateVariables(xml) {
   }));
 }
 
-async function inspectDescriptor(response) {
+async function inspectDescriptor(response, certificatePin) {
   const location = response.headers.location;
   if (!location) return response;
   try {
-    const xml = await getLocalText(location, response.address);
+    const xml = await getLocalText(location, response.address, { certificatePin });
     const description = parseDescription(xml, location);
     for (const service of description.services) {
       if (!service.SCPDURL) continue;
       try {
-        const scpd = await getLocalText(service.SCPDURL, response.address);
+        const scpd = await getLocalText(service.SCPDURL, response.address, { certificatePin });
         service.actions = parseScpd(scpd);
         service.stateVariables = parseStateVariables(scpd);
       } catch (error) { service.schemaError = error.message; }
@@ -241,7 +246,8 @@ export function testPort(host, port, timeout = 700) {
   });
 }
 
-export async function discover({ durationMs = 4500, interfaceAddress, host } = {}) {
+export async function discover({ durationMs = 4500, interfaceAddress, host, certificatePin } = {}) {
+  if (certificatePin !== undefined && !isPrivateIPv4(host)) throw new Error('A discovery certificate pin requires one selected private TV host.');
   const interfaces = Object.entries(os.networkInterfaces()).flatMap(([name, addresses]) =>
     addresses.filter(a => a.family === 'IPv4' && !a.internal && isPrivateIPv4(a.address))
       .map(a => ({ name, address: a.address, netmask: a.netmask })));
@@ -252,7 +258,7 @@ export async function discover({ durationMs = 4500, interfaceAddress, host } = {
   for (const scan of scans) for (const response of scan.responses) {
     unique.set(`${response.address}|${response.headers.location ?? response.headers.usn}`, response);
   }
-  const devices = await Promise.all([...unique.values()].map(inspectDescriptor));
+  const devices = await Promise.all([...unique.values()].map(response => inspectDescriptor(response, response.address === host ? certificatePin : undefined)));
   const lgHosts = [...new Set(devices.filter(d => /LG|webos|OLED|lge-com/i.test(
     [d.description?.manufacturer, d.description?.friendlyName, d.description?.modelName, d.headers.st, d.headers.server].join(' ')))
     .map(d => d.address))];
@@ -276,10 +282,10 @@ async function main() {
   const args = process.argv.slice(2);
   const option = key => { const index = args.indexOf(key); return index >= 0 ? args[index + 1] : undefined; };
   if (args.includes('--help')) {
-    console.log('node discover.mjs [--interface LAN_IP] [--host TV_IP] [--out reports/discovery.json]');
+    console.log('node discover.mjs [--interface LAN_IP] [--host TV_IP] [--certificate-pin SHA256] [--out reports/discovery.json]');
     return;
   }
-  const report = await discover({ interfaceAddress: option('--interface'), host: option('--host') });
+  const report = await discover({ interfaceAddress: option('--interface'), host: option('--host'), certificatePin: option('--certificate-pin') });
   const out = option('--out') ?? 'reports/discovery.json';
   await fs.mkdir(path.dirname(out), { recursive: true });
   await fs.writeFile(out, JSON.stringify(report, null, 2) + '\n');

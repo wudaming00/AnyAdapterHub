@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
-import { initializeHub, addHubDevice, loadHubConfig, privateDirectory, protectHubHome, readJson, writePrivateJson } from '../lib/hub/config.mjs';
+import { initializeHub, addHubDevice, loadHubConfig, loadTVConfig, privateDirectory, protectHubHome, readJson,
+  writePrivateJson, setAdapterEnabled, setDeviceFeatures } from '../lib/hub/config.mjs';
+import { protectTVKey, resolveCredential, resolveTVKey } from '../lib/security/credentials.mjs';
+import { testSecretStore, testIdentity } from './helpers/secrets.mjs';
 
 const WINDOWS = process.platform === 'win32';
 const HOST = '192.168.50.25';
@@ -18,8 +21,10 @@ async function fixture(t) {
     await rm(root, { recursive: true, force: true });
   });
   const tvConfigPath = path.join(root, 'paired-tv.json');
-  await writeFile(tvConfigPath, JSON.stringify({ host: HOST, clientKey: 'offline-fixture-pairing-key' }), { mode: 0o600 });
-  return { root, home: path.join(root, 'hub'), tvConfigPath };
+  const secretStore = testSecretStore();
+  await writeFile(tvConfigPath, JSON.stringify(await protectTVKey({ host: HOST, clientKey: 'offline-fixture-pairing-key',
+    secure: true, certificatePin: 'b'.repeat(64) }, HOST, { secretStore })), { mode: 0o600 });
+  return { root, home: path.join(root, 'hub'), tvConfigPath, secretStore, identity: await testIdentity(secretStore) };
 }
 
 async function markers(home, tvConfigPath) {
@@ -96,18 +101,85 @@ test('initialization, serve loading and credential writes enforce private home a
   const f = await fixture(t);
   const initialized = await initializeHub({ ...f, host: HOST });
   assert.equal(initialized.home, f.home);
-  const loaded = await loadHubConfig(f.home);
+  const loaded = await loadHubConfig(f.home, { secretStore: f.secretStore });
   assert.equal(loaded.devices[0].config.host, HOST);
   assert.equal(loaded.devices[0].id, 'living-room-tv');
-  assert.match((await readJson(path.join(f.home, 'owner.json'))).token, /^[A-Za-z0-9_-]{43}$/);
-  await writePrivateJson(path.join(f.home, 'client.json'), { url: 'http://127.0.0.1:8765', token: TOKEN });
-  await writePrivateJson(path.join(f.home, 'process.json'), { pid: 1 }, { exclusive: false });
-  await writePrivateJson(path.join(f.home, 'process.json'), { pid: 2 }, { exclusive: false });
+  assert.equal(loaded.devices[0].config.certificatePin, 'b'.repeat(64));
+  const owner = await readJson(path.join(f.home, 'owner.json'));
+  assert.equal(Object.hasOwn(owner, 'token'), false);
+  assert.match((await resolveCredential(owner, { secretStore: f.secretStore })).token, /^[A-Za-z0-9_-]{43}$/);
+  await writePrivateJson(path.join(f.home, 'client.json'), { url: 'https://127.0.0.1:8765', certificatePin: f.identity.certificatePin,
+    certificate: f.identity.certificate, token: TOKEN }, { secretStore: f.secretStore });
+  await writePrivateJson(path.join(f.home, 'process.json'), { pid: 1 }, { exclusive: false, secretStore: f.secretStore });
+  await writePrivateJson(path.join(f.home, 'process.json'), { pid: 2 }, { exclusive: false, secretStore: f.secretStore });
   assert.deepEqual(await readJson(path.join(f.home, 'process.json')), { pid: 2 });
   await assertPrivate(f.home);
-  const owner = await readFile(path.join(f.home, 'owner.json'), 'utf8');
+  const ownerBytes = await readFile(path.join(f.home, 'owner.json'), 'utf8');
   await assert.rejects(initializeHub({ ...f, host: HOST }), /new or empty/);
-  assert.equal(await readFile(path.join(f.home, 'owner.json'), 'utf8'), owner);
+  assert.equal(await readFile(path.join(f.home, 'owner.json'), 'utf8'), ownerBytes);
+});
+
+test('empty core has no enabled adapter and disabled enrollments never open their configuration', async t => {
+  const f = await fixture(t);
+  await initializeHub({ home: f.home, secretStore: f.secretStore, identity: f.identity });
+  const record = await readJson(path.join(f.home, 'hub.json'));
+  assert.deepEqual(record, { version: 2, port: 8765, adapters: [], devices: [] });
+  assert.deepEqual((await loadHubConfig(f.home, { secretStore: f.secretStore })).devices, []);
+  record.devices.push({ id: 'disabled-tv', label: 'Offline TV', adapter: 'lg-webos',
+    configPath: path.join(f.root, 'never-open-this-file.json'), features: [] });
+  await writePrivateJson(path.join(f.home, 'hub.json'), record, { exclusive: false, secretStore: f.secretStore });
+  assert.deepEqual((await loadHubConfig(f.home, { secretStore: f.secretStore })).devices, []);
+  await assert.rejects(lstat(record.devices[0].configPath), { code: 'ENOENT' });
+});
+
+test('LG enrollment requires the exact encrypted key binding and never falls back to plaintext', async t => {
+  const f = await fixture(t);
+  const options = { configPath: f.tvConfigPath, secretStore: f.secretStore };
+  assert.equal((await loadTVConfig(options)).clientKey, 'offline-fixture-pairing-key');
+  await assert.rejects(loadTVConfig({ ...options, host: '192.168.50.26' }), { code: 'SECRET_STORE_FAILED' });
+  const sealed = await readJson(f.tvConfigPath);
+  await writeFile(f.tvConfigPath, JSON.stringify({ ...sealed, clientKey: 'plaintext-fallback-must-fail' }));
+  await assert.rejects(loadTVConfig(options), { code: 'ENCRYPTED_CREDENTIAL_REQUIRED' });
+  await writeFile(f.tvConfigPath, JSON.stringify({ host: HOST, clientKey: 'plaintext-only-must-fail' }));
+  await assert.rejects(loadTVConfig(options), { code: 'ENCRYPTED_CREDENTIAL_REQUIRED' });
+  assert.equal((await readdir(f.root)).includes('hub'), false);
+});
+
+test('owner feature selection and adapter switches persist independently without changing credentials', async t => {
+  const f = await fixture(t);
+  await initializeHub({ ...f, host: HOST });
+  const options = { secretStore: f.secretStore };
+  const configPath = path.join(f.home, 'hub.json');
+  const ownerPath = path.join(f.home, 'owner.json');
+  const ownerBefore = await readFile(ownerPath, 'utf8');
+  const tvBefore = await readFile(f.tvConfigPath, 'utf8');
+  assert.deepEqual((await loadHubConfig(f.home, options)).devices[0].features, []);
+  assert.deepEqual(await setDeviceFeatures(f.home, 'living-room-tv', ['observer', 'media'], options), {
+    deviceId: 'living-room-tv', features: ['observer', 'media'], restartRequired: true,
+  });
+  assert.deepEqual((await loadHubConfig(f.home, options)).devices[0].features, ['observer', 'media']);
+  let before = await readFile(configPath, 'utf8');
+  await assert.rejects(setDeviceFeatures(f.home, 'living-room-tv', ['shell'], options), { code: 'INVALID_FEATURES' });
+  await assert.rejects(setDeviceFeatures(f.home, 'living-room-tv', ['media', 'media'], options), { code: 'INVALID_FEATURES' });
+  await assert.rejects(setDeviceFeatures(f.home, 'not-enrolled', ['media'], options), /enrolled v2 device/);
+  assert.equal(await readFile(configPath, 'utf8'), before);
+  assert.deepEqual(await setAdapterEnabled(f.home, 'lg-webos', false, options), {
+    adapter: 'lg-webos', enabled: false, restartRequired: true,
+  });
+  assert.deepEqual((await loadHubConfig(f.home, options)).devices, []);
+  assert.deepEqual((await readJson(configPath)).devices[0].features, ['observer', 'media']);
+  await setDeviceFeatures(f.home, 'living-room-tv', [], options);
+  assert.deepEqual((await readJson(configPath)).adapters, []);
+  await setAdapterEnabled(f.home, 'lg-webos', true, options);
+  await setAdapterEnabled(f.home, 'lg-webos', true, options);
+  assert.deepEqual((await readJson(configPath)).adapters, ['lg-webos']);
+  assert.deepEqual((await loadHubConfig(f.home, options)).devices[0].features, []);
+  before = await readFile(configPath, 'utf8');
+  await assert.rejects(setAdapterEnabled(f.home, '../unreviewed-plugin.mjs', true, options), { code: 'UNKNOWN_ADAPTER' });
+  assert.equal(await readFile(configPath, 'utf8'), before);
+  assert.equal(await readFile(ownerPath, 'utf8'), ownerBefore);
+  assert.equal(await readFile(f.tvConfigPath, 'utf8'), tvBefore);
+  await assertPrivate(f.home);
 });
 
 test('unrelated populated directories and incomplete markers are rejected before permission changes', async t => {
@@ -155,7 +227,7 @@ test('failed owner write rolls back only configuration files created by that ini
   await handle.close();
   const original = prototype.writeFile;
   const mocked = t.mock.method(prototype, 'writeFile', async function (data, ...options) {
-    if (typeof data === 'string' && Object.hasOwn(JSON.parse(data), 'token')) {
+    if (typeof data === 'string' && Object.hasOwn(JSON.parse(data), 'tokenSecret')) {
       const error = new Error('Fixture disk write failure.'); error.code = 'ENOSPC'; throw error;
     }
     return original.call(this, data, ...options);
@@ -163,7 +235,9 @@ test('failed owner write rolls back only configuration files created by that ini
   try { await assert.rejects(initializeHub({ ...f, host: HOST }), { code: 'ENOSPC' }); }
   finally { mocked.mock.restore(); }
   assert.deepEqual(await readdir(f.home), []);
-  assert.equal((await readJson(f.tvConfigPath)).clientKey, 'offline-fixture-pairing-key');
+  const paired = await readJson(f.tvConfigPath);
+  assert.equal(Object.hasOwn(paired, 'clientKey'), false);
+  assert.equal(await resolveTVKey(paired, HOST, { secretStore: f.secretStore }), 'offline-fixture-pairing-key');
   await initializeHub({ ...f, host: HOST });
   await assertPrivate(f.home);
 });
@@ -233,9 +307,9 @@ test('owner enrollment adds one pinned cloud device without changing TV credenti
   const ecovacsConfigPath = path.join(f.root, 'ecovacs.local.json');
   await writeFile(credentialFile, Buffer.from('encrypted-offline-fixture'));
   await writeFile(ecovacsConfigPath, JSON.stringify({ pythonPath: process.execPath, credentialFile, selectedDeviceSha256: 'a'.repeat(64) }));
-  const added = await addHubDevice({ home: f.home, ecovacsConfigPath });
+  const added = await addHubDevice({ home: f.home, ecovacsConfigPath, secretStore: f.secretStore });
   assert.deepEqual(added, { deviceId: 'vacuum', adapter: 'ecovacs-x11', restartRequired: true });
-  const loaded = await loadHubConfig(f.home);
+  const loaded = await loadHubConfig(f.home, { secretStore: f.secretStore });
   assert.equal(loaded.devices.length, 2);
   assert.equal(loaded.devices[0].adapterName, 'lg-webos');
   assert.equal(loaded.devices[1].adapterName, 'ecovacs-x11');
@@ -243,9 +317,9 @@ test('owner enrollment adds one pinned cloud device without changing TV credenti
   assert.equal(await readFile(path.join(f.home, 'owner.json'), 'utf8'), ownerBefore);
   assert.equal(await readFile(f.tvConfigPath, 'utf8'), originalTV);
   const before = await readFile(path.join(f.home, 'hub.json'), 'utf8');
-  await assert.rejects(addHubDevice({ home: f.home, ecovacsConfigPath }), /already enrolled/);
-  await assert.rejects(addHubDevice({ home: f.home, ecovacsConfigPath, id: 'other-vacuum', host: HOST }), /not a host/);
-  await assert.rejects(addHubDevice({ home: f.home, ecovacsConfigPath, tvConfigPath: f.tvConfigPath }), /exactly one/);
+  await assert.rejects(addHubDevice({ home: f.home, ecovacsConfigPath, secretStore: f.secretStore }), /already enrolled/);
+  await assert.rejects(addHubDevice({ home: f.home, ecovacsConfigPath, id: 'other-vacuum', host: HOST, secretStore: f.secretStore }), /not a host/);
+  await assert.rejects(addHubDevice({ home: f.home, ecovacsConfigPath, tvConfigPath: f.tvConfigPath, secretStore: f.secretStore }), /exactly one/);
   assert.equal(await readFile(path.join(f.home, 'hub.json'), 'utf8'), before);
   assert.equal((await readdir(f.home)).some(name => name.startsWith('enrollment-')), false);
   await assertPrivate(f.home);

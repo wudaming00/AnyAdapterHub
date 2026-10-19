@@ -6,7 +6,7 @@ The implementation review, regression tests, remaining risks and release checkli
 
 ## Deployment boundary
 
-Run the Hub on a computer, OS account and local network you trust. Its HTTP API binds to `127.0.0.1`; it is not designed for public exposure or arbitrary LAN clients. A reverse proxy, tunnel, port forward, permissive CORS or broader bind address requires a separate authentication and transport review.
+Run the Hub on a computer, OS account and local network you trust. Its pinned HTTPS API binds to `127.0.0.1`; it is not designed for public exposure or arbitrary LAN clients. A reverse proxy, tunnel, port forward, permissive CORS or broader bind address requires a separate authentication and transport review. See [secure setup and migration](docs/SECURE_SETUP.md).
 
 The Hub protects its API against clients with narrower grants. It does **not** sandbox code running as the same OS user. An agent that can read owner files, execute local code or change the Hub can bypass API permissions. Use separate OS accounts or a suitable process/container boundary for an untrusted agent. That isolation is a deployment responsibility, not an isolation facility supplied by AnyAdapter Hub.
 
@@ -30,7 +30,7 @@ Screens, webpages, subtitles, app metadata, room names, device strings and contr
 
 ## Network and device identity limits
 
-Some LG protocols use HTTP or WebSocket without authenticated encryption. Current LG WSS and pointer-WSS accept the TV's self-signed certificate without certificate pinning. DLNA is unauthenticated. Local IP matching, pairing material, selected-device fingerprints and per-run tokens reduce accidental substitution; they do not provide cryptographic protection against every LAN impersonation or middleperson attack. DHCP reuse or a compromised router/device can violate this boundary.
+LG remote control now requires WSS with an enrolled SHA-256 certificate pin; pin validation completes before HTTP Upgrade, registration or pairing-key transmission. Pointer WSS and HTTPS screenshots use the same pin; plaintext remote-control/capture downgrade is refused. Public discovery sends no credentials and uses system CA validation or an explicit pin for HTTPS. Initial enrollment uses trusted-network TOFU. The lgtv2 maintainers also [report shared factory certificates and private keys](https://github.com/hobbyquaker/lgtv2#api), so a matching certificate does not establish one unique household TV. This B8's certificate has not yet been retrieved under the new transport. DLNA and optional observer/media LAN legs remain unauthenticated/unencrypted; their local-IP checks and per-run tokens do not defeat a hostile LAN. Keep those enhancements off when that trust is unavailable.
 
 Temporary LG observation is off until explicitly enabled in local owner configuration. It checks the exact reviewed model/firmware and uses a fixed bundled bridge, random per-run token, exact TV source IP, fixed routes and bounded time/data. It exposes no arbitrary Luna, shell, rooting or firmware-flashing tool. It closes the overlay/listener, restores the app and reports whether owned capture cleanup was verified. Source-IP filtering and a token sent over HTTP are not authenticated encryption. Do not use this model-specific channel as a permanent general management service.
 
@@ -38,13 +38,15 @@ External URLs must match exact owner-configured `allowedUrlOrigins`; default is 
 
 ## Credentials, files and image privacy
 
-The dedicated Hub home uses POSIX owner-only modes or a verified Windows DACL limited to the current user and SYSTEM. Initialization requires a new/empty dedicated directory; existing non-Hub directories, links/junctions and unsuitable file ownership are rejected. Scoped client credentials are stored as hashes in SQLite. Owner/client CLI files and LG pairing configuration still contain plaintext secrets protected by OS access control. External pairing files are not migrated or protected by Hub initialization. No OS keychain integration is provided for these LG/Hub secrets.
+The dedicated Hub home uses a verified Windows DACL limited to the current user and SYSTEM. Initialization requires a new/empty dedicated directory; existing non-Hub directories, links/junctions and unsuitable file ownership are rejected. Scoped client credentials are stored as hashes in SQLite. Hub owner/client tokens, LG pairing keys and the Hub TLS private key use Windows CurrentUser DPAPI ciphertext with purpose binding; no adjacent master key or plaintext fallback is provided. The explicit migration includes enrolled and explicitly named pairing files. Live production secret storage is currently Windows-only; POSIX file-mode tests do not establish an encrypted Linux/macOS backend. A copied ciphertext file is protected from ordinary decryption by another OS account; same-user execution, administrator/OS compromise and memory inspection remain outside this protection. Migration does not forensically erase historical copies or snapshots.
 
 The optional ECOVACS adapter uses a separately configured encrypted credential file and isolated, version-pinned Python helper. Its selected device and US account region are checked; only reviewed commands are exposed. An upstream account can cover more devices than one client grant; vendor/cloud trust remains necessary. This is not an offline local-control protocol. See adapter documentation for prerequisites and hardware-validation limits.
 
 Local media sharing is off until `mediaRoots` are configured. The host checks real paths, types and directory boundaries and serves the same validated open file handle. Same-user unrestricted filesystem/code access is outside this boundary. Do not put credential/configuration directories in media roots.
 
 Frames expire within five minutes, with at most five per device and 32 MiB globally. Expired frames are immediately unreadable through the API; logical pruning runs every 30 seconds. `screen.read` permits retained frames for that device, rather than only one requester's captures. Exported images are outside this retention policy. SQLite `secure_delete` does not guarantee forensic erasure of WAL, backups, crash remnants or storage media.
+
+Credential encryption does not encrypt the SQLite state/events/frame content or exported images. Those require the private OS directory and, where needed, encrypted storage with its own access controls.
 
 The journal retains 10,000 events; cursors can have gaps. Operation/idempotency records remain for the database lifetime to prevent replay. There is no automatic archival, lifetime database quota or sustained client rate limit. Monitor disk use. Deleting deduplication history does not make resubmitting an old command safe. Keep logs, exports, credentials and household maps out of Git and public diagnostics.
 

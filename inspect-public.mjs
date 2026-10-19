@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import WebSocket from 'ws';
 import { checkedLocalUrl, isPrivateIPv4 } from './discover.mjs';
+import { createPinnedTVAgent } from './lib/security/tv-tls.mjs';
 
 const SAFE_QUERIES = {
   'ConnectionManager': ['GetProtocolInfo', 'GetCurrentConnectionIDs'],
@@ -76,18 +77,20 @@ export function soapOutcome(action, response) {
     ...(!hasFault && !hasActionResponse ? { unexpectedResponse: true } : {}) };
 }
 
-function preflight(host, secure) {
+function preflight(host, secure, { certificatePin } = {}) {
   if (!isPrivateIPv4(host)) throw new Error('TV must have a private LAN IPv4 address');
   return new Promise(resolve => {
     const result = { url: `${secure ? 'wss' : 'ws'}://${host}:${secure ? 3001 : 3000}`, messages: [],
       note: 'No register/pairing request was sent.' };
-    const socket = new WebSocket(result.url, { ...(secure ? { rejectUnauthorized: false } : {}), handshakeTimeout: 3000 });
+    const agent = secure && certificatePin !== undefined ? createPinnedTVAgent({ host, certificatePin, timeoutMs: 3000 }) : undefined;
+    const socket = new WebSocket(result.url, { ...(agent ? { agent } : {}), handshakeTimeout: 3000, followRedirects: false, maxPayload: 256 * 1024 });
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
       socket.terminate();
+      agent?.destroy();
       resolve(result);
     };
     const timer = setTimeout(finish, 4000);
@@ -108,7 +111,7 @@ function preflight(host, secure) {
   });
 }
 
-export async function inspectPublic(discovery, host) {
+export async function inspectPublic(discovery, host, { certificatePin } = {}) {
   if (!isPrivateIPv4(host)) throw new Error('TV must have a private LAN IPv4 address');
   const devices = discovery.devices.filter(d => d.address === host);
   if (!devices.length) throw new Error('TV was not present in discovery report');
@@ -144,7 +147,7 @@ export async function inspectPublic(discovery, host) {
       } catch (error) { report.dial.push({ error: error.message }); }
     }
   }
-  report.websocket = await Promise.all([preflight(host, false), preflight(host, true)]);
+  report.websocket = await Promise.all([preflight(host, false), preflight(host, true, { certificatePin })]);
   return report;
 }
 
@@ -152,9 +155,9 @@ async function main() {
   const args = process.argv.slice(2);
   const get = name => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
   const host = get('--host');
-  if (!host) throw new Error('Usage: node inspect-public.mjs --host TV_IP [--discovery reports/discovery.json] [--out reports/public.json]');
+  if (!host) throw new Error('Usage: node inspect-public.mjs --host TV_IP [--certificate-pin SHA256] [--discovery reports/discovery.json] [--out reports/public.json]');
   const discovery = JSON.parse(await fs.readFile(get('--discovery') ?? 'reports/discovery.json', 'utf8'));
-  const report = await inspectPublic(discovery, host);
+  const report = await inspectPublic(discovery, host, { certificatePin: get('--certificate-pin') });
   const out = get('--out') ?? 'reports/public.json';
   await fs.mkdir(path.dirname(out), { recursive: true });
   await fs.writeFile(out, JSON.stringify(report, null, 2) + '\n');

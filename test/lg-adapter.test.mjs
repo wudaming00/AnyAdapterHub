@@ -62,9 +62,50 @@ function fixture(options = {}) {
     };
     mediaHosts.push(host); return host;
   };
-  const adapter = new LGWebOSAdapter({ deviceId: 'living-room-tv', config: { ...privateConfig, ...options.config }, controllerFactory: factory, observer, mediaHostFactory });
+  const adapter = new LGWebOSAdapter({ deviceId: 'living-room-tv', config: { ...privateConfig, ...options.config }, features: options.features ?? ['observer', 'media'], controllerFactory: factory, observer, mediaHostFactory });
   return { adapter, calls, controllers, values, mediaHosts };
 }
+
+test('basic-only LG enrollment rejects enhancement calls before authorization, connection or effects', async t => {
+  const f = fixture({ features: [] }); t.after(() => f.adapter.close());
+  assert.deepEqual(f.adapter.features, []);
+  assert.deepEqual(f.adapter.readonlyActions, ['app.list']);
+  for (const action of ['screen.observe', 'media.url.play', 'dlna.play', 'dlna.control', 'dlna.status', 'media.file.cast']) {
+    assert.equal(f.adapter.supportedActions.includes(action), false);
+  }
+  let dispatchChecks = 0;
+  const context = { assertDispatch() { dispatchChecks++; } };
+  await assert.rejects(f.adapter.observe({}, context), { code: 'FEATURE_NOT_ENABLED' });
+  for (const command of [
+    { action: 'dlna.status', args: {} },
+    { action: 'dlna.control', args: { action: 'play' } },
+    { action: 'dlna.play', args: { url: 'http://example.test/video', mimeType: 'video/mp4' } },
+    { action: 'media.url.play', args: { url: 'http://example.test/video', mimeType: 'video/mp4' } },
+    { action: 'media.file.cast', args: { filePath: '/approved-media/example.mp4' } },
+  ]) await assert.rejects(f.adapter.execute(command, context), { code: 'FEATURE_NOT_ENABLED' });
+  assert.equal(dispatchChecks, 0);
+  assert.deepEqual(f.calls, []);
+  assert.equal((await f.adapter.execute({ action: 'audio.mute.set', args: { muted: true } })).confirmed, true);
+  assert.equal((await f.adapter.execute({ action: 'media.control', args: { action: 'pause' } })).requestAccepted, true);
+});
+
+test('LG features are explicit, immutable and independently selected; observer keeps its local opt-in gate', async t => {
+  for (const features of [['root'], ['observer', 'observer'], 'observer', null]) {
+    assert.throws(() => new LGWebOSAdapter({ deviceId: 'tv', config: privateConfig, features }), { code: 'INVALID_FEATURES' });
+  }
+  const features = ['media'];
+  const media = fixture({ features }); t.after(() => media.adapter.close());
+  features.push('observer');
+  assert.deepEqual(media.adapter.features, ['media']);
+  assert.ok(Object.isFrozen(media.adapter.features));
+  await assert.rejects(media.adapter.observe(), { code: 'FEATURE_NOT_ENABLED' });
+  assert.equal((await media.adapter.execute({ action: 'dlna.status' })).confirmed, true);
+  const observer = fixture({ features: ['observer'], config: { allowTemporaryObserver: false } });
+  t.after(() => observer.adapter.close());
+  await assert.rejects(observer.adapter.observe(), { code: 'OBSERVER_NOT_ENABLED' });
+  await assert.rejects(observer.adapter.execute({ action: 'dlna.status' }), { code: 'FEATURE_NOT_ENABLED' });
+  assert.deepEqual(observer.calls, []);
+});
 
 test('snapshot and event projections include freshness but no private connection data', async t => {
   const f = fixture(); t.after(() => f.adapter.close());

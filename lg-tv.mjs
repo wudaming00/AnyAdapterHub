@@ -8,10 +8,14 @@ import {
   SCREENSHOT_ENDPOINT, auditTV, downloadCapture, redact, validateLocalHost,
 } from './lib/ssap.mjs';
 import { TVController, wakeTV, SCREENSHOT_OPTIONS } from './lib/tv-controller.mjs';
+import { resolveTVKey, protectTVKey } from './lib/security/credentials.mjs';
+import { writeSecureJson } from './lib/hub/config.mjs';
+import { probeTVIdentityCertificate } from './lib/security/tv-tls.mjs';
 
 const HELP = `LG webOS local interface probe (Node.js 22+)
 
   node lg-tv.mjs pair --host IP [--secure] [--port 3000|3001] [--profile audit|control|extended|legacy-lgtv2]
+  node lg-tv.mjs certificate --host IP  (TLS-only, prints unverified first-observed fingerprint)
   node lg-tv.mjs audit --host IP [--out reports/tv-audit.json] [--include-pointer]
   node lg-tv.mjs screenshot --host IP --output reports/tv-capture.jpg
   node lg-tv.mjs status|apps|keyboard --host IP
@@ -89,7 +93,7 @@ function parseArgs(args) {
   const booleans = new Set(['secure', 'include-pointer', 'help', 'replace', 'loop']);
   const values = new Set(['host', 'port', 'profile', 'out', 'output', 'config', 'timeout-ms', 'pairing-timeout-ms',
     'id', 'params', 'content-id', 'url', 'text', 'name', 'dx', 'dy', 'value', 'state', 'mac', 'broadcast', 'bind-address', 'webos-major', 'wake-port',
-    'mime', 'title', 'description', 'icon', 'action']);
+    'mime', 'title', 'description', 'icon', 'action', 'certificate-pin']);
   for (let index = 0; index < rest.length; index++) {
     const option = rest[index];
     if (!option.startsWith('--')) throw new SSAPError('Unexpected positional argument.', 'USAGE');
@@ -121,7 +125,7 @@ async function saveConfig(file, config) {
   await mkdir(path.dirname(file), { recursive: true });
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    await writeSecureJson(temporary, config);
     await rename(temporary, file);
   } catch {
     throw new SSAPError('Cannot save local pairing key. Check the configuration path and file permissions.', 'KEY_SAVE_FAILED');
@@ -131,6 +135,7 @@ async function saveConfig(file, config) {
 export async function main(args = process.argv.slice(2), { stdout = console.log, stderr = console.error,
   baseDirectory = process.cwd(), clientFactory = (options) => new SSAPClient(options),
   controllerFactory = (options) => new TVController(options),
+  resolveKey = resolveTVKey, protectKey = protectTVKey,
 } = {}) {
   let client;
   let controller;
@@ -138,6 +143,10 @@ export async function main(args = process.argv.slice(2), { stdout = console.log,
   try {
     const { command, options } = parseArgs(args);
     if (command === 'help' || options.help || command === '--help') { stdout(HELP); return 0; }
+    if (command === 'certificate') {
+      if (Object.keys(options).some(key => !['host', 'timeout-ms'].includes(key))) throw new SSAPError('Invalid certificate probe options.', 'USAGE');
+      stdout(JSON.stringify(await probeTVIdentityCertificate({ host: validateLocalHost(options.host), timeoutMs: Number(options['timeout-ms'] ?? 8000) }), null, 2)); return 0;
+    }
     const controlOptions = {
       status: [], apps: [], keyboard: [], launch: ['id', 'params', 'content-id'], close: ['id'], content: ['id', 'content-id'],
       open: ['url'], text: ['text', 'replace'], key: ['name'], move: ['dx', 'dy'], click: [], scroll: ['dx', 'dy'],
@@ -149,7 +158,7 @@ export async function main(args = process.argv.slice(2), { stdout = console.log,
     const isControl = Object.hasOwn(controlOptions, command);
     if (!['pair', 'audit', 'screenshot'].includes(command) && !isControl) throw new SSAPError('Unknown command. Use help for examples.', 'USAGE');
     const validForCommand = isControl ? new Set(['host', 'secure', 'port', 'config', 'timeout-ms', 'webos-major', ...controlOptions[command]]) : {
-      pair: new Set(['host', 'secure', 'port', 'profile', 'config', 'timeout-ms', 'pairing-timeout-ms']),
+      pair: new Set(['host', 'secure', 'port', 'profile', 'config', 'timeout-ms', 'pairing-timeout-ms', 'certificate-pin']),
       audit: new Set(['host', 'secure', 'port', 'config', 'timeout-ms', 'out', 'include-pointer']),
       screenshot: new Set(['host', 'secure', 'port', 'config', 'timeout-ms', 'output']),
     }[command];
@@ -158,8 +167,13 @@ export async function main(args = process.argv.slice(2), { stdout = console.log,
     const legacyRequested = command === 'pair' && options.profile === 'legacy-lgtv2';
     const configFile = path.resolve(baseDirectory, options.config ?? (legacyRequested ? '.lg-tv.legacy.local.json' : '.lg-tv.local.json'));
     const config = await loadConfig(configFile);
+    if (resolveKey === resolveTVKey && Object.values(config.devices).some(item => Object.hasOwn(item ?? {}, 'clientKey'))) {
+      throw new SSAPError('Plaintext pairing records require the explicit local security migration before use.', 'ENCRYPTED_CREDENTIAL_REQUIRED');
+    }
     secrets = Object.values(config.devices).map((item) => item?.clientKey).filter((key) => typeof key === 'string');
-    const saved = Object.hasOwn(config.devices, host) ? config.devices[host] : undefined;
+    const record = Object.hasOwn(config.devices, host) ? config.devices[host] : undefined;
+    const saved = record ? { ...record, clientKey: await resolveKey(record, host) } : undefined;
+    if (saved?.clientKey) secrets.push(saved.clientKey);
     if (saved && (!saved.clientKey || !Array.isArray(saved.permissions))) throw new SSAPError('Saved TV pairing record is invalid.', 'CONFIG_INVALID');
     const profile = command === 'pair' ? (options.profile ?? 'audit') : (saved?.profile ?? 'audit');
     if (!['audit', 'control', 'extended', 'legacy-lgtv2'].includes(profile)) throw new SSAPError('Choose audit, control, extended or legacy-lgtv2.', 'USAGE');
@@ -196,8 +210,12 @@ export async function main(args = process.argv.slice(2), { stdout = console.log,
     const reuseKey = command !== 'pair' || (saved?.profile === profile && (!legacyProfile ||
       saved.registrationManifestMetadata?.sha256 === registrationManifestMetadata.sha256));
     const port = options.port === undefined ? undefined : Number(options.port);
-    const secure = options.secure || (port !== undefined ? port === 3001 : saved?.secure === true);
+    const secure = options.secure || (port !== undefined ? port === 3001 : saved?.secure ?? true);
     const effectivePort = port ?? (options.secure ? 3001 : saved?.port);
+    const certificatePin = options['certificate-pin'] ?? saved?.certificatePin;
+    if (saved && options['certificate-pin'] !== undefined && options['certificate-pin'].replaceAll(':', '').toLowerCase() !== saved.certificatePin?.replaceAll(':', '').toLowerCase()) {
+      throw new SSAPError('A stored key cannot be sent with a replacement certificate pin. Review certificate enrollment separately.', 'TLS_PIN_CHANGED');
+    }
     if (!['pair', 'wake'].includes(command) && !saved) throw new SSAPError('No saved pairing key for this TV. Run pair first; no connection was made.', 'PAIRING_REQUIRED');
     if (command === 'screenshot' && !options.output) throw new SSAPError('Screenshot requires --output FILE.', 'USAGE');
     if (command === 'wake') {
@@ -219,7 +237,7 @@ export async function main(args = process.argv.slice(2), { stdout = console.log,
       if (options.params !== undefined) {
         try { params = JSON.parse(options.params); } catch { throw new SSAPError('--params must be valid JSON.', 'USAGE'); }
       }
-      controller = controllerFactory({ host, port: effectivePort, secure, clientKey: saved.clientKey,
+      controller = controllerFactory({ host, port: effectivePort, secure, certificatePin, clientKey: saved.clientKey,
         permissions: saved.permissions, registrationManifest, timeoutMs: Number(options['timeout-ms'] ?? 8000),
         webOSMajor: Number(options['webos-major'] ?? saved.webOSMajor ?? 4),
         wake: saved.wake, dlnaTimeoutMs: Number(options['timeout-ms'] ?? 15000),
@@ -247,7 +265,7 @@ export async function main(args = process.argv.slice(2), { stdout = console.log,
       stdout(JSON.stringify(controller.sanitize(await actions[command]()), null, 2));
       return 0;
     }
-    client = clientFactory({ host, port: effectivePort, secure,
+    client = clientFactory({ host, port: effectivePort, secure, certificatePin,
       clientKey: reuseKey ? saved?.clientKey : undefined,
       permissions: command === 'pair' ? requestedPermissions : saved.permissions,
       registrationManifest,
@@ -256,9 +274,9 @@ export async function main(args = process.argv.slice(2), { stdout = console.log,
       onPairing: () => stderr('请在电视弹出的连接请求中选择允许。此次连接不会发送遥控或播放命令。'),
       onClientKey: command === 'pair' ? async (key) => {
         secrets.push(key);
-        config.devices[host] = { ...inheritedMetadata, ...saved, clientKey: key, permissions: [...requestedPermissions], profile,
+        config.devices[host] = await protectKey({ ...inheritedMetadata, ...saved, clientKey: key, permissions: [...requestedPermissions], profile,
           registrationManifest, registrationManifestMetadata,
-          port: client.port, secure: client.secure, pairedAt: new Date().toISOString() };
+          port: client.port, secure: client.secure, certificatePin, pairedAt: new Date().toISOString() }, host);
         await saveConfig(configFile, config);
       } : undefined,
     });
@@ -280,7 +298,7 @@ export async function main(args = process.argv.slice(2), { stdout = console.log,
     }
     const capture = await client.request(SCREENSHOT_ENDPOINT, { ...SCREENSHOT_OPTIONS });
     const { data, contentType, bytes } = await downloadCapture(capture.imageUri, host, {
-      timeoutMs: client.timeoutMs, allowSelfSigned: client.secure,
+      timeoutMs: client.timeoutMs, certificatePin,
     });
     const output = path.resolve(options.output);
     await mkdir(path.dirname(output), { recursive: true });

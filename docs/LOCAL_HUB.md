@@ -1,6 +1,8 @@
 # 本地 Device Hub
 
-AnyAdapter Hub 是独立进程。CLI、Node SDK 或后续 Collie 客户端都通过本地 HTTP API 使用它。它不依赖某个 Agent，也不会自动配对电视、修改固件、取得 root 或安装系统开机任务。
+当前安全版本使用 Windows 当前用户 DPAPI 加密凭据和固定证书 HTTPS；旧安装需先按[加密迁移说明](SECURE_SETUP.md)迁移。适配器和增强功能按需启用；Linux/macOS 尚无生产密钥存储后端。
+
+AnyAdapter Hub 是独立进程。CLI、Node SDK 或后续 Collie 客户端都通过本地 HTTPS API 使用它。它不依赖某个 Agent，也不会自动配对电视、修改固件、取得 root 或安装系统开机任务。
 
 以下说明对应当前代码行为。单台 B8 的 Hub HTTP 链路已有有限真机验证，具体范围见文末；不能据此宣称全部能力或其他设备都已验证。
 
@@ -74,10 +76,11 @@ B8 观测会短暂使用特定系统覆盖层，结束后关闭并恢复原应�
 从项目根目录运行的代码可以使用 `lib/hub/client.mjs`。凭据文件由所有者预先签发，程序不需要读取电视配置：
 
 ```js
-import { readFile } from 'node:fs/promises';
+import { readJson } from './lib/hub/config.mjs';
+import { resolveCredential } from './lib/security/credentials.mjs';
 import { HubClient } from './lib/hub/client.mjs';
 
-const credential = JSON.parse(await readFile('.device-hub/audio-client.json', 'utf8'));
+const credential = await resolveCredential(await readJson('.device-hub/audio-client.json'));
 const hub = new HubClient(credential);
 const operation = await hub.execute('living-room-tv', 'audio.volume.set', { volume: 15 }, {
   idempotencyKey: 'volume-example-1',

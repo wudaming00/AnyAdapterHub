@@ -87,6 +87,7 @@ test('legacy CLI defaults to separate key file, preserves own key and copies onl
   const log = []; let constructed;
   const result = await main(['pair', '--host', HOST, '--secure', '--profile', 'legacy-lgtv2'], {
     baseDirectory: directory, stdout: (value) => log.push(value), stderr: (value) => log.push(value),
+    resolveKey: async profile => profile.clientKey, protectKey: async profile => profile,
     clientFactory: (options) => {
       constructed = options;
       return { port: 3001, secure: true, sanitize: (value) => redact(value, [legacyKey]),
@@ -126,6 +127,7 @@ test('legacy pairing failure leaves both files unchanged and refuses the own-app
   await writeFile(ownFile, own); await writeFile(legacyFile, legacy);
   let connections = 0;
   const options = { baseDirectory: directory, stdout: () => {}, stderr: () => {},
+    resolveKey: async profile => profile.clientKey, protectKey: async profile => profile,
     clientFactory: () => ({ sanitize: (value) => value,
       connect: async () => { connections++; throw Object.assign(new Error('403 user denied'), { code: 'TV_REJECTED' }); }, close: () => {},
     }),
@@ -369,7 +371,7 @@ test('private address validation and explicit secure transport options are enfor
   const secure = harness(accept, { secure: true });
   await secure.client.connect();
   assert.equal(secure.connectionOptions.url, `wss://${HOST}:3001`);
-  assert.equal(secure.connectionOptions.rejectUnauthorized, false);
+  assert.notEqual(secure.connectionOptions.rejectUnauthorized, false);
   assert.equal(secure.connectionOptions.followRedirects, false);
   secure.client.close();
 });
@@ -384,7 +386,7 @@ test('capture URL must remain on the same literal host and contain no URL creden
     { authorization: '[REDACTED]', password: '[REDACTED]', clientKey: '[REDACTED]', child: { 'client-key': '[REDACTED]' } });
 });
 
-test('capture TLS exception is opt-in, HTTPS-only, and applied after same-host validation', async () => {
+test('injected capture transport retains certificate checks and validates the same host first', async () => {
   let recorded;
   const requestFactory = (url, options, callback) => {
     recorded = { url: url.href, ...options };
@@ -403,12 +405,12 @@ test('capture TLS exception is opt-in, HTTPS-only, and applied after same-host v
   };
   await downloadCapture(`https://${HOST}/capture.jpg`, HOST, { requestFactory });
   assert.equal(recorded.rejectUnauthorized, true);
-  await downloadCapture(`https://${HOST}/capture.jpg`, HOST, { requestFactory, allowSelfSigned: true });
-  assert.equal(recorded.rejectUnauthorized, false);
-  await downloadCapture(`http://${HOST}/capture.jpg`, HOST, { requestFactory, allowSelfSigned: true });
+  await downloadCapture(`https://${HOST}/capture.jpg`, HOST, { requestFactory, certificatePin: 'a'.repeat(64) });
+  assert.equal(recorded.rejectUnauthorized, true);
+  await downloadCapture(`http://${HOST}/capture.jpg`, HOST, { requestFactory });
   assert.equal(recorded.rejectUnauthorized, true);
   recorded = undefined;
-  await assert.rejects(downloadCapture('https://example.com/capture.jpg', HOST, { requestFactory, allowSelfSigned: true }), { code: 'INVALID_CAPTURE_URL' });
+  await assert.rejects(downloadCapture('https://example.com/capture.jpg', HOST, { requestFactory }), { code: 'INVALID_CAPTURE_URL' });
   assert.equal(recorded, undefined);
 });
 
@@ -421,9 +423,10 @@ test('capture download refuses redirects/non-images and caps response size (loop
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
-  const image = await downloadCapture(`${base}/image`, '127.0.0.1');
+  const requestFactory = (url, options, callback) => http.get(url, options, callback);
+  const image = await downloadCapture(`${base}/image`, '127.0.0.1', { requestFactory });
   assert.equal(image.bytes, 4);
   assert.equal(image.contentType, 'image/jpeg');
-  for (const route of ['/redirect', '/html']) await assert.rejects(downloadCapture(base + route, '127.0.0.1'), { code: 'CAPTURE_DOWNLOAD_FAILED' });
-  await assert.rejects(downloadCapture(`${base}/image`, '127.0.0.1', { maxBytes: 2 }), { code: 'CAPTURE_TOO_LARGE' });
+  for (const route of ['/redirect', '/html']) await assert.rejects(downloadCapture(base + route, '127.0.0.1', { requestFactory }), { code: 'CAPTURE_DOWNLOAD_FAILED' });
+  await assert.rejects(downloadCapture(`${base}/image`, '127.0.0.1', { requestFactory, maxBytes: 2 }), { code: 'CAPTURE_TOO_LARGE' });
 });

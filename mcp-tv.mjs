@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 import { validateMediaRoots } from './lib/media-host.mjs';
+import { resolveTVKey } from './lib/security/credentials.mjs';
 
 // MCP stdio framing, lifecycle and tools are implemented against the pinned spec:
 // https://modelcontextprotocol.io/specification/2025-06-18/basic/transports
@@ -143,7 +144,7 @@ function contentHttpUrl(value) {
   catch { return undefined; }
 }
 
-export async function loadPrivateConfig({ configPath = DEFAULT_CONFIG, host, env = process.env, readFile = fs.readFile } = {}) {
+export async function loadPrivateConfig({ configPath = DEFAULT_CONFIG, host, env = process.env, readFile = fs.readFile, resolveKey = resolveTVKey } = {}) {
   let saved;
   try { saved = JSON.parse(await readFile(configPath, 'utf8')); }
   catch (error) {
@@ -157,7 +158,8 @@ export async function loadPrivateConfig({ configPath = DEFAULT_CONFIG, host, env
   if (!privateHost(selectedHost)) throw new Error('Select a private LAN IPv4 TV address with --host or LG_TV_HOST.');
   const profile = object(devices[selectedHost]) ? devices[selectedHost] : saved;
   // Copy only known connection fields. Loading never pairs, persists a key, or edits config.
-  return { host: selectedHost, clientKey: profile.clientKey, permissions: profile.permissions,
+  return { host: selectedHost, clientKey: await resolveKey(profile, selectedHost), permissions: profile.permissions,
+    certificatePin: profile.certificatePin,
     port: profile.port, secure: profile.secure, timeoutMs: profile.timeoutMs, webOSMajor: profile.webOSMajor,
     registrationManifest: profile.registrationManifest,
     allowTemporaryObserver: profile.allowTemporaryObserver === true,

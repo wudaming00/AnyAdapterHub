@@ -59,13 +59,13 @@ async function fixture(t) {
   });
   await runtime.start({ pollMs: 60_000 });
   let shutdownCalls = 0;
-  const server = new HubServer({ runtime, onShutdown: () => { shutdownCalls++; } });
+  const server = new HubServer({ allowInsecureLoopback: true, runtime, onShutdown: () => { shutdownCalls++; } });
   const address = await server.listen({ port: 0 });
-  const owner = new HubClient({ url: address.url, token: OWNER_TOKEN });
+  const owner = new HubClient({ allowInsecureLoopback: true, url: address.url, token: OWNER_TOKEN });
   t.after(async () => { await server.close(); await runtime.close(); });
   async function grant(capabilities, deviceIds) {
     const issued = await owner.issueGrant(grantRequest(capabilities, deviceIds));
-    return { ...issued, client: new HubClient({ url: address.url, token: issued.token }) };
+    return { ...issued, client: new HubClient({ allowInsecureLoopback: true, url: address.url, token: issued.token }) };
   }
   return { store, runtime, server, owner, first, second, grant, get shutdownCalls() { return shutdownCalls; }, ...address };
 }
@@ -106,7 +106,7 @@ async function bounded(promise, milliseconds = 2500) {
 test('unready runtime refuses API work until recovery has completed', async t => {
   const store = new HubStore({ filePath: ':memory:' }); const adapter = new FakeAdapter('tv-one');
   const runtime = new HubRuntime({ store, ownerTokenHash: tokenHash(OWNER_TOKEN), devices: [{ id: 'tv-one', label: 'TV', adapter, config: {} }] });
-  const server = new HubServer({ runtime }); const address = await server.listen({ port: 0 });
+  const server = new HubServer({ allowInsecureLoopback: true, runtime }); const address = await server.listen({ port: 0 });
   t.after(async () => { await server.close(); await runtime.close(); });
   assert.equal((await rawRequest(address.port, '/health')).status, 503);
   assert.equal((await rawRequest(address.port, '/v1/devices', { token: OWNER_TOKEN })).status, 503);
@@ -370,6 +370,6 @@ test('tokens in query strings, foreign absolute targets, malformed bodies and un
 
 test('HubClient rejects remote origins and credential-bearing URLs before making requests', () => {
   for (const url of ['https://127.0.0.1:8765', 'http://attacker.example:8765', 'http://127.0.0.1:8765/?token=secret', 'http://user:pass@127.0.0.1:8765', 'http://127.0.0.1:8765/v1']) {
-    assert.throws(() => new HubClient({ url, token: OWNER_TOKEN }), /loopback HTTP origin/);
+    assert.throws(() => new HubClient({ allowInsecureLoopback: true, url, token: OWNER_TOKEN }), /loopback HTTPS origin|certificate|buffer/);
   }
 });

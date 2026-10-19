@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { resolveCredential, resolveTVKeyForMigration } from '../lib/security/credentials.mjs';
 
 const cwd = fileURLToPath(new URL('../', import.meta.url));
 const git = args => execFileSync('git', args, { cwd, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
@@ -15,12 +16,17 @@ function collect(value, field = '') {
   else if (value && typeof value === 'object') Object.entries(value).forEach(([k, v]) => collect(v, k));
 }
 // Optional local comparison; values are never logged or written to a report.
-for (const name of ['.lg-tv.local.json', '.lg-tv.legacy.local.json', '.ecovacs-x11.local.json', '.device-hub/owner.json', '.device-hub/client.json']) {
-  try { if (existsSync(new URL('../' + name, import.meta.url))) collect(JSON.parse(readFileSync(new URL('../' + name, import.meta.url), 'utf8'))); }
+for (const name of ['.lg-tv.local.json', '.lg-tv.legacy.local.json', '.ecovacs-x11.local.json', '.device-hub/owner.json', '.device-hub/client.json', '.device-hub/vacuum-client.json', '.device-hub/client-revoked.json']) {
+  try { if (existsSync(new URL('../' + name, import.meta.url))) {
+    const value = JSON.parse(readFileSync(new URL('../' + name, import.meta.url), 'utf8'));
+    collect(value);
+    if (value.tokenSecret) collect(await resolveCredential(value));
+    for (const [host, profile] of Object.entries(value.devices ?? {})) if (profile.clientKeySecret) secrets.add(await resolveTVKeyForMigration(profile, host));
+  } }
   catch { throw new Error('A local credential comparison input could not be read.'); }
 }
 const patterns = [
-  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\r?\n[A-Za-z0-9+/=]{16,}/,
   /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[A-Z0-9]{16})\b/,
   /\beyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\b/,
   /[A-Za-z]:[\\/]Users[\\/][^\s"'<>]+/i,

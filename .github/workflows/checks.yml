@@ -19,6 +19,9 @@ jobs:
           python-version: '3.14'
       - run: 'python -m pip install --only-binary=:all: -r optional/ecovacs/requirements.txt'
       - run: npm ci --ignore-scripts
+      # Core installation has no mandatory vendor dependency. The complete test
+      # matrix explicitly selects the reviewed LG transport and Python worker.
+      - run: npm run adapter:lg:install
       - run: npm test
       - run: python -I -B optional/ecovacs/test_worker.py
       - run: npm run check:profiles

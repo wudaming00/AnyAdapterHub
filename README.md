@@ -1,10 +1,12 @@
 # AnyAdapter Hub
 
+Current live security support: Windows CurrentUser DPAPI plus pinned HTTPS. No plaintext credential fallback. Existing installations must follow [secure migration](docs/SECURE_SETUP.md); adapters and enhancements are optional. Linux/macOS require a reviewed secret provider before live enrollment.
+
 **A local device hub for agents.** AnyAdapter for short. Connect devices through reviewed adapters, grant precise permissions, and distinguish accepted commands from observed outcomes.
 
 [中文](README.zh-CN.md) · [Supported devices](docs/SUPPORTED_DEVICES.md) · [Security](SECURITY.md) · [Adapter requirements](docs/ADAPTER_REQUIREMENTS.md)
 
-AnyAdapter Hub runs independently of any agent framework. Clients use loopback HTTP, SSE, or the JavaScript SDK. Collie and other agents can connect as clients; MCP is an optional legacy interface.
+AnyAdapter Hub runs independently of any agent framework. Clients use pinned loopback HTTPS, SSE, or the JavaScript SDK. Collie and other agents can connect as clients; MCP is an optional legacy interface.
 
 **Development preview.** This is an owner-operated research project, not a production security boundary. It has not received an independent security audit. Do not expose the hub or device interfaces to the internet. npm publication remains disabled.
 
@@ -25,8 +27,10 @@ Requires Node.js **22.13+**; the initial local validation used 22.22.2 and its e
 
 ```sh
 npm ci --ignore-scripts
+npm run adapter:lg:install
 npm run check
-node lg-tv.mjs pair --host <TV_LAN_IP> --profile control
+node lg-tv.mjs certificate --host <TV_LAN_IP>
+node lg-tv.mjs pair --host <TV_LAN_IP> --certificate-pin <REVIEWED_SHA256_HEX> --profile control
 node device-hub.mjs init --tv-config .lg-tv.local.json --host <TV_LAN_IP>
 node device-hub.mjs serve
 ```
@@ -44,10 +48,11 @@ node device-hub.mjs events
 Grant management uses the local owner credential. Give an agent the scoped client file, never `owner.json`. Credentials, databases, screenshots and logs stay outside Git. Stop the hub with `node device-hub.mjs stop`.
 
 ```js
-import { readFile } from 'node:fs/promises';
+import { readJson } from './lib/hub/config.mjs';
+import { resolveCredential } from './lib/security/credentials.mjs';
 import { HubClient } from './lib/hub/client.mjs';
 
-const hub = new HubClient(JSON.parse(await readFile('.device-hub/client.json', 'utf8')));
+const hub = new HubClient(await resolveCredential(await readJson('.device-hub/client.json')));
 const state = await hub.state('living-room-tv');
 const operation = await hub.execute('living-room-tv', 'audio.volume.set', { volume: 15 }, {
   idempotencyKey: 'request-123-volume',
@@ -65,7 +70,7 @@ for await (const event of hub.events()) {
 - **Private observation.** Creating and reading a screen frame need separate capabilities. Frames have bounded lifetime and storage; ordinary events contain no images.
 - **Reviewed contributions.** Model profiles are data only. New executable adapters require code review, negative tests, licensing review and hardware evidence. Downloaded profiles never install code.
 
-These controls do not isolate an agent with full shell access under the same OS account. The LG link also has transport-identity limitations. Read the [security model](SECURITY.md), [review checklist](docs/SECURITY_REVIEW.md), [adapter contract](docs/ADAPTER_REQUIREMENTS.md), and [local operation guide](docs/LOCAL_HUB.md) before granting control.
+These controls do not isolate an agent with full shell access under the same OS account. LG requires a saved TLS pin; factory-shared certificates and optional legacy media/observer channels still limit device identity and confidentiality. Read the [security model](SECURITY.md), [review checklist](docs/SECURITY_REVIEW.md), [adapter contract](docs/ADAPTER_REQUIREMENTS.md), and [local operation guide](docs/LOCAL_HUB.md) before granting control.
 
 ## Contribute
 

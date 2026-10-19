@@ -23,7 +23,7 @@ function fixture({ response, dlnaClient, pointerWebSocketFactory, subscribe } = 
     async subscribe(uri, payload, options) { return subscribe?.(options) ?? { unsubscribe() {} }; },
   };
   const controller = new TVController({ host: HOST, ssapClient, dlnaClient, pointerWebSocketFactory });
-  const adapter = new LGWebOSAdapter({ deviceId: 'fixture-tv', config: { host: HOST, allowTemporaryObserver: true },
+  const adapter = new LGWebOSAdapter({ deviceId: 'fixture-tv', features: ['media', 'observer'], config: { host: HOST, allowTemporaryObserver: true },
     controllerFactory: () => controller });
   let allowed = true;
   return { adapter, controller, calls, revoke() { allowed = false; }, context: { assertDispatch() { if (!allowed) throw revoked(); } } };
