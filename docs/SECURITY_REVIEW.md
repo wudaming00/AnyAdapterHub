@@ -92,6 +92,45 @@ External URLs require exact configured origins. A hostname can change address an
 
 This map describes intended test coverage, not every possible attack. No cross-platform penetration test or formal isolation proof was performed. Hardware evidence can predate a code change and covers only its stated devices/capabilities; reread it before relying on it.
 
+## Initial public CodeQL triage
+
+The first public scan of revision `3e3179ca075eeff809efdbdaac331886e8893f36` reported 15 alerts. The following records the assigned transport/filesystem/data-flow findings, rather than claiming that the complete scan is clean. Static findings require path-specific review; an expected application data flow does not cancel a separate weakness on that path. No alert was automatically dismissed as part of this review.
+
+### Certificate validation: four real remaining risks
+
+Alerts **#4–#7** identify actual certificate-validation bypasses:
+
+| Alert | Path | Exposure |
+| --- | --- | --- |
+| #4 | `inspect-public.mjs`, WSS preflight | Selected-TV inspection accepts an unverified certificate; returned identity/service metadata can be impersonated. No registration/pairing request is sent on this preflight path. |
+| #5 | `discover.mjs`, HTTPS descriptor retrieval | Same-device literal-IP checks and refusal of redirects do not authenticate the descriptor server's certificate. |
+| #6 | `lib/ssap.mjs`, secure SSAP connection | The session accepts an unverified TV certificate and can send pairing material and control requests. A LAN middleperson remains a real confidentiality/control risk. |
+| #7 | `lib/tv-controller.mjs`, pointer WSS connection | Same literal TV host and fixed pointer framing constrain routing/commands but do not authenticate a WSS peer's certificate. |
+
+These remain **open security risks**. A private IP, paired client key, `secure: true` or encrypted-but-unauthenticated connection is not verified device identity. Some paths also use plaintext HTTP/WS or unauthenticated DLNA. The development preview must not be represented as production-secure or safe against a hostile LAN.
+
+No hurried TLS migration was made in this fix because LG local certificates and existing installation behavior require a coordinated compatibility change. A suitable follow-up is verified TLS by default, with owner-provisioned trust/pinning or a conspicuous, explicit local compatibility opt-in; it must cover SSAP, pointer, capture and discovery together and preserve clear failure behavior. An opt-in exception would remain an exception, not a reason to describe an insecure connection as authenticated. Changing one `rejectUnauthorized` flag would not secure the other protocols.
+
+### Filesystem races: narrow hardening and remaining assumptions
+
+Alert **#8**, `lib/hub/config.mjs/readJson`, found an initial `lstat` followed by `open`. The follow-up hardening compares the initial path's device/inode, the opened handle's `fstat` and a post-open `lstat`; it rejects mismatched identities and a current symbolic link before reading any bytes. This supplements POSIX `O_NOFOLLOW`, which is not available through Node on Windows. Reads remain bounded and use that same verified handle.
+
+[security-config-race.test.mjs](../test/security-config-race.test.mjs) deterministically substitutes real temporary fixture files between the initial check/open and between open/final path verification, and checks that both cases fail before a read. The stable-file case passes. Its file-symlink case explicitly skips when the OS account cannot create such a link; that skip is not evidence of symlink behavior on that platform.
+
+This is narrow identity hardening, **not a complete hostile-filesystem proof**. Ancestor directories and concurrent in-place file writes still require trusted local ownership/access control. An adversary who can replace directory components or execute as the owner is outside the currently supplied isolation boundary. Static rescanning may still require manual review of this path.
+
+Alert **#9**, `lib/media-host.mjs`, flags `stat` before `open`. The media host already checks the opened handle's device/inode against the preceding stat and serves all requests from that handle. The regression in [media-host.test.mjs](../test/media-host.test.mjs) replaces the former filename after setup and verifies that requests still return the originally selected file. This addresses replacement after that identity check; it does not justify dismissing every possible race.
+
+In particular, realpath containment and the later stat/open are separate steps. A hostile actor able to replace an ancestor directory between those steps can violate assumptions that a final-component `O_NOFOLLOW` and file inode comparison alone do not prove. Media roots and their directory ancestry must be owner-controlled and not writable by untrusted accounts/processes. The current implementation does not claim race-free containment on an adversarial shared filesystem; no such guarantee or blanket false-positive classification is made here.
+
+### Five reviewed expected I/O flows
+
+Alerts **#10–#14** identify intended file/network transitions with the following constraints. These are reviewed expected flows, not automatic dismissals, and the TLS risks above remain independently applicable.
+
+- **#10/#11, `inspect-public.mjs`:** an explicitly selected CLI discovery JSON contributes descriptor/service data to HTTP/SOAP requests. `checkedLocalUrl` requires a literal RFC1918 address and the exact CLI-selected responding host and rejects credentials/public/other-host destinations. Fetches do not follow redirects. `SAFE_QUERIES` permits fixed read-only methods; SOAP inputs are fixed InstanceID `0`/Channel `Master` defaults and XML-escaped. This is bounded selected-device inspection, not a tool to upload an arbitrary local file to an arbitrary URL.
+- **#12/#13, `lib/ssap.mjs`:** owner-selected local configuration supplies port/transport and a saved pairing key for reconnect or explicit pairing. Host/port validation, fixed WS(S) construction and disabled redirects constrain the destination. The optional bundled legacy compatibility manifest is SHA-256 checked by the CLI and shape-checked before registration. Sending a pairing key to its selected TV is expected protocol I/O; failure to authenticate the TLS peer is still a genuine separate risk. Same-user modification of owner configuration is not prevented by these checks.
+- **#14, `device-hub.mjs`:** `observe --out` deliberately exports a frame from the authenticated loopback Hub. The output path comes from the local CLI option, is resolved locally and is opened with `wx` and POSIX mode `0600`; the network response supplies image bytes, not its destination filename. Existing files are not overwritten. Windows export-directory ACLs, parent-directory integrity and retention of explicitly exported images remain owner responsibilities; this export is outside Hub frame expiry.
+
 ## Release and adapter checklist
 
 - Review the actual diff, action registry, device binding, grant/deadline behavior, targets and cleanup ownership. Higher-impact actions need separate review, not reuse of a generic switch/navigation capability.

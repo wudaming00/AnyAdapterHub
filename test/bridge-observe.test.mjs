@@ -4,7 +4,15 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const html = readFileSync(new URL('../privileged-probe/bridge-observe.html', import.meta.url), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+// Extract the exact marker pair in this reviewed repository fixture. This is not
+// an HTML sanitizer, and neither device HTML nor network input enters this VM.
+const scriptStart = html.indexOf('<script>');
+const scriptEnd = html.indexOf('</script>', scriptStart + '<script>'.length);
+assert.ok(scriptStart >= 0 && scriptEnd > scriptStart, 'Expected the checked-in observer script');
+assert.equal(html.indexOf('<script>', scriptStart + '<script>'.length), -1, 'Expected one fixture script');
+const script = html.slice(scriptStart + '<script>'.length, scriptEnd);
+assert.equal(script.split('__LG_AGENT_CONFIG__').length, 2, 'Expected one fixture configuration placeholder');
+const fixtureScript = script.replace('__LG_AGENT_CONFIG__', '__fixtureConfig');
 const runId = '1234567890abcdef';
 const token = 'abcdef1234567890abcdef1234567890';
 
@@ -52,10 +60,13 @@ function harness(options = {}) {
     };
   }
   const location = options.location || { protocol: 'http:', hostname: '192.168.77.11', host: '192.168.77.11:61234' };
-  vm.runInNewContext(script.replace('__LG_AGENT_CONFIG__', JSON.stringify(config)), {
+  // Supply config as data, never interpolate fixture tokens into executable code.
+  // The reviewed script runs only against mock I/O; VM is not an untrusted-code sandbox.
+  vm.runInNewContext(fixtureScript, {
+    __fixtureConfig: config,
     window: {}, location, XMLHttpRequest, PalmServiceBridge, Date: { now: () => now },
     setTimeout, clearTimeout: key => timers.delete(key),
-  });
+  }, { timeout: 1000, filename: 'bridge-observe-test-fixture.js' });
   function tick(target) {
     let loops = 0;
     while (true) {

@@ -12,6 +12,14 @@ const TARGETS = [
   'urn:schemas-upnp-org:device:MediaRenderer:1',
   'ssdp:all',
 ];
+const MAX_XML_BYTES = 2 * 1024 * 1024;
+
+function checkedXml(xml) {
+  if (typeof xml !== 'string' || xml.length > MAX_XML_BYTES || Buffer.byteLength(xml, 'utf8') > MAX_XML_BYTES) {
+    throw new Error('Device XML must be a string no larger than 2 MiB');
+  }
+  return xml;
+}
 
 export function isPrivateIPv4(ip) {
   if (net.isIP(ip) !== 4) return false;
@@ -99,22 +107,61 @@ export function getLocalText(value, expectedHost) {
   });
 }
 
+function* xmlElements(xml, tag) {
+  // Restricted UPnP descriptor extraction, not HTML sanitization or a general
+  // XML validator. Search each delimiter once instead of retrying a content
+  // regexp from every repeated opening tag when a closing tag is missing.
+  const opening = new RegExp(`<(?:(?:[\\w.-]+):)?${tag}(?=\\s|>)`, 'ig');
+  const closing = new RegExp(`<\\/(?:(?:[\\w.-]+):)?${tag}\\s*>`, 'ig');
+  let match;
+  let count = 0;
+  while ((match = opening.exec(xml))) {
+    if (++count > 2048) throw new Error('Device XML contains too many elements');
+    const start = xml.indexOf('>', opening.lastIndex);
+    if (start === -1) throw new Error('Malformed device XML: unterminated opening tag');
+    if (xml[start - 1] === '/') {
+      opening.lastIndex = start + 1;
+      yield '';
+      continue;
+    }
+    closing.lastIndex = start + 1;
+    const end = closing.exec(xml);
+    if (!end) throw new Error('Malformed device XML: unterminated ' + tag);
+    opening.lastIndex = closing.lastIndex;
+    yield xml.slice(start + 1, end.index);
+  }
+}
+
 function xmlInner(xml, tag) {
-  return xml.match(new RegExp(`<(?:(?:[\\w.-]+):)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:(?:[\\w.-]+):)?${tag}>`, 'i'))?.[1] ?? '';
+  return xmlElements(xml, tag).next().value ?? '';
 }
 
 function xmlText(xml, tag) {
   const value = xmlInner(xml, tag);
-  return value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").trim();
+  const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+  // Decode each original entity once. In particular, &amp;lt; must stay &lt;.
+  const decode = text => text.replace(/&(amp|lt|gt|quot|apos);/g, (_, name) => entities[name]);
+  const chunks = [];
+  let offset = 0;
+  while (offset < value.length) {
+    const start = value.indexOf('<![CDATA[', offset);
+    if (start === -1) { chunks.push(decode(value.slice(offset))); break; }
+    chunks.push(decode(value.slice(offset, start)));
+    const end = value.indexOf(']]>', start + 9);
+    if (end === -1) throw new Error('Malformed device XML: unterminated CDATA');
+    // CDATA content is literal; it must not enter the entity decoder again.
+    chunks.push(value.slice(start + 9, end));
+    offset = end + 3;
+  }
+  return chunks.join('').trim();
 }
 
 export function parseDescription(xml, location) {
+  checkedXml(xml);
   if (!/<(?:[\w.-]+:)?root\b/i.test(xml) || !/<(?:[\w.-]+:)?device\b/i.test(xml)) throw new Error('Unsupported device description XML');
   const declaredBase = xmlText(xml, 'URLBase');
   const base = declaredBase ? new URL(declaredBase, location).href : location;
-  const services = [...xml.matchAll(/<(?:[\w.-]+:)?service\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?service>/gi)].map(([, block]) => {
+  const services = [...xmlElements(xml, 'service')].map(block => {
     const service = {};
     for (const field of ['serviceType', 'serviceId', 'SCPDURL', 'controlURL', 'eventSubURL']) {
       const value = xmlText(block, field);
@@ -133,11 +180,12 @@ export function parseDescription(xml, location) {
 }
 
 export function parseScpd(xml) {
+  checkedXml(xml);
   if (!/<(?:[\w.-]+:)?scpd\b/i.test(xml)) throw new Error('Unsupported SCPD XML; no method inference made');
   const actionList = xmlInner(xml, 'actionList');
-  return [...actionList.matchAll(/<(?:[\w.-]+:)?action\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?action>/gi)].map(([, block]) => ({
+  return [...xmlElements(actionList, 'action')].map(block => ({
     name: xmlText(block, 'name'),
-    arguments: [...block.matchAll(/<(?:[\w.-]+:)?argument\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?argument>/gi)].map(([, arg]) => ({
+    arguments: [...xmlElements(block, 'argument')].map(arg => ({
       name: xmlText(arg, 'name'),
       direction: xmlText(arg, 'direction'),
       relatedStateVariable: xmlText(arg, 'relatedStateVariable'),
@@ -146,11 +194,12 @@ export function parseScpd(xml) {
 }
 
 export function parseStateVariables(xml) {
+  checkedXml(xml);
   const table = xmlInner(xml, 'serviceStateTable');
-  return [...table.matchAll(/<(?:[\w.-]+:)?stateVariable\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?stateVariable>/gi)].map(([, block]) => ({
+  return [...xmlElements(table, 'stateVariable')].map(block => ({
     name: xmlText(block, 'name'),
     dataType: xmlText(block, 'dataType'),
-    allowedValues: [...block.matchAll(/<(?:[\w.-]+:)?allowedValue\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?allowedValue>/gi)].map(([, value]) => value.trim()),
+    allowedValues: [...xmlElements(block, 'allowedValue')].map(value => value.trim()),
     ...(xmlText(block, 'allowedValueRange') ? { range: {
       minimum: xmlText(block, 'minimum'), maximum: xmlText(block, 'maximum'), step: xmlText(block, 'step'),
     } } : {}),

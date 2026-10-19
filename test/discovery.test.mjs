@@ -20,6 +20,52 @@ test('embedded service schemas resolve relative URLs against advertised base', (
   assert.deepEqual(variables, [{ name: 'TransportState', dataType: 'string', allowedValues: ['PLAYING', 'STOPPED'] }]);
 });
 
+test('XML text decodes original entities once and preserves literal CDATA', () => {
+  const description = parseDescription('<root><device><friendlyName>Plain &amp; <![CDATA[&amp; <TV>]]> &amp;lt;</friendlyName>' +
+    '<modelName>&amp;quot; &quot;&apos;&lt;&gt; &amp;</modelName></device></root>', 'http://192.168.77.80/root.xml');
+  assert.equal(description.friendlyName, 'Plain & &amp; <TV> &lt;');
+  assert.equal(description.modelName, '&quot; "\'<> &');
+  const [action] = parseScpd('<scpd><actionList><action><name><![CDATA[Get&amp;State]]></name></action></actionList></scpd>');
+  assert.equal(action.name, 'Get&amp;State');
+});
+
+test('malformed CDATA is rejected without repeated-start regular-expression scanning', () => {
+  const manyStarts = '<![CDATA[a'.repeat(32768);
+  assert.throws(() => parseDescription('<root><device><friendlyName>' + manyStarts + '</friendlyName></device></root>',
+    'http://192.168.77.80/root.xml'), /unterminated CDATA/);
+  assert.throws(() => parseScpd('<scpd><actionList><action><name><![CDATA[GetState</name></action></actionList></scpd>'),
+    /unterminated CDATA/);
+  assert.throws(() => parseStateVariables('<scpd><serviceStateTable><stateVariable><name><![CDATA[State</name>' +
+    '</stateVariable></serviceStateTable></scpd>'), /unterminated CDATA/);
+});
+
+test('all device XML entry points enforce the descriptor byte bound before parsing', () => {
+  for (const parse of [parseDescription, parseScpd, parseStateVariables]) {
+    assert.throws(() => parse('x'.repeat(2 * 1024 * 1024 + 1)), /no larger than 2 MiB/);
+    assert.throws(() => parse('é'.repeat(1024 * 1024 + 1)), /no larger than 2 MiB/);
+    assert.throws(() => parse(Buffer.from('<root/>')), /must be a string/);
+  }
+});
+
+test('repeated unclosed XML fields and list entries fail without retrying every opening', () => {
+  const description = '<root><device>' + '<friendlyName>a'.repeat(30000) + '</device></root>';
+  assert.throws(() => parseDescription(description, 'http://192.168.77.80/root.xml'), /unterminated friendlyName/);
+  assert.throws(() => parseDescription('<root><device><serviceList>' + '<service>a'.repeat(30000) +
+    '</serviceList></device></root>', 'http://192.168.77.80/root.xml'), /unterminated service/);
+  assert.throws(() => parseScpd('<scpd><actionList>' + '<action>a'.repeat(30000) + '</actionList></scpd>'), /unterminated action/);
+  assert.throws(() => parseStateVariables('<scpd><serviceStateTable>' + '<stateVariable>a'.repeat(30000) +
+    '</serviceStateTable></scpd>'), /unterminated stateVariable/);
+});
+
+test('XML collections are bounded and empty namespaced fields do not consume the next field', () => {
+  assert.throws(() => parseScpd('<scpd><actionList>' + '<action><name>GetState</name></action>'.repeat(2049) +
+    '</actionList></scpd>'), /too many elements/);
+  const description = parseDescription('<u:root><u:device><u:friendlyName /><u:modelName>Model</u:modelName></u:device></u:root>',
+    'http://192.168.77.80/root.xml');
+  assert.equal(description.friendlyName, '');
+  assert.equal(description.modelName, 'Model');
+});
+
 test('discovery will not follow an external or different-device descriptor', () => {
   assert.throws(() => checkedLocalUrl('https://example.com/descriptor'), /private LAN/);
   assert.throws(() => checkedLocalUrl('http://192.168.77.81/descriptor', '192.168.77.80'), /responding device/);
