@@ -99,9 +99,9 @@ function subprocess(onRequest) {
   return child;
 }
 test('worker runner sends fixed args without shell; credential path enters stdin and environment is minimized', async t => {
-  const previous = process.env.ADAPTANY_TEST_UNRELATED_CREDENTIAL;
-  process.env.ADAPTANY_TEST_UNRELATED_CREDENTIAL = 'not-a-real-credential';
-  t.after(() => { if (previous === undefined) delete process.env.ADAPTANY_TEST_UNRELATED_CREDENTIAL; else process.env.ADAPTANY_TEST_UNRELATED_CREDENTIAL = previous; });
+  const previous = process.env.ANYADAPTER_TEST_UNRELATED_CREDENTIAL;
+  process.env.ANYADAPTER_TEST_UNRELATED_CREDENTIAL = 'not-a-real-credential';
+  t.after(() => { if (previous === undefined) delete process.env.ANYADAPTER_TEST_UNRELATED_CREDENTIAL; else process.env.ANYADAPTER_TEST_UNRELATED_CREDENTIAL = previous; });
   let invocation; let child;
   const runner = createECOVACSRunner(config, { spawnFn: (...args) => {
     invocation = args;
@@ -112,7 +112,7 @@ test('worker runner sends fixed args without shell; credential path enters stdin
   assert.equal(invocation[0], config.pythonPath); assert.deepEqual(invocation[1].slice(0, 3), ['-I', '-B', '-u']);
   assert.equal(invocation[1].some(value => value === config.credentialFile), false);
   assert.equal(invocation[2].shell, false); assert.equal(invocation[2].windowsHide, true);
-  assert.equal(invocation[2].env.ADAPTANY_TEST_UNRELATED_CREDENTIAL, undefined);
+  assert.equal(invocation[2].env.ANYADAPTER_TEST_UNRELATED_CREDENTIAL, undefined);
   const allowedEnv = new Set(['PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ']);
   assert.ok(Object.keys(invocation[2].env).every(key => allowedEnv.has(key.toUpperCase())));
   assert.equal(Object.keys(invocation[2].env).some(key => /proxy|^python|token|key|^ssl_cert/i.test(key)), false);
