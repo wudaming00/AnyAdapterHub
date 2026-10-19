@@ -100,6 +100,8 @@ The first public scan of revision `3e3179ca075eeff809efdbdaac331886e8893f36` rep
 
 The current security revision replaces these four scattered bypass paths with required LG certificate pin validation before HTTP/SSAP/key transmission, pinned pointer/capture connections, and CA-or-explicit-pin public discovery. [security-tv-tls.test.mjs](../test/security-tv-tls.test.mjs) verifies real loopback TLS and no request/key delivery on mismatches. The centralized self-signed-TV connector deliberately performs its own mandatory pin check before releasing the socket; static analysis may still flag that custom trust boundary and needs manual review. See [secure setup](SECURE_SETUP.md) for TOFU, shared factory-key limitations and legacy observer/media channels. This records source changes and tests; it does not assert GitHub alerts have closed or that real hardware has passed the new transport.
 
+The rescan of `a711484` closed the four original certificate alerts and reports **#16** at the centralized self-signed-TV connector. Its deliberate CA exception remains explicitly recorded rather than dismissed: exact pin checking must complete before the socket reaches HTTP/WebSocket code; the TLS-only first-observation probe is a separate trust step. The rescan also reports **#17**, the expected encrypted-configuration-to-selected-TV pairing-key flow, alongside the previously reviewed filesystem/I/O findings. A successful CodeQL workflow is not a zero-alert result or an independent audit.
+
 Alerts **#4–#7** identify actual certificate-validation bypasses:
 
 | Alert | Path | Exposure |
