@@ -9,7 +9,7 @@ vacuum, and it does not expose the ECOVACS account's other devices.
 | Scope | Evidence | Claim |
 | --- | --- | --- |
 | US ECOVACS HOME DEEBOT X11 OmniCyclone, cloud device class `huhcip` | New optional worker read normalized status and 11 read-only setting/maintenance queries on reference hardware | Read-only worker verified; firmware unknown |
-| New AdaptAny JavaScript adapter and local hub | A scoped HubClient read fresh state and normalized settings/counters; movement and cross-device requests were denied | Read-only hub verified; no movement verification |
+| New AnyAdapter Hub JavaScript adapter and local hub | A scoped HubClient read fresh state and normalized settings/counters; movement and cross-device requests were denied | Read-only hub verified; no movement verification |
 | Pause, resume, stop, return while moving | Not independently verified on the physical robot through this bridge | Experimental commands; never describe ACK as completed movement |
 | Other ECOVACS models, X1 OMNI, other regions or brands | Not verified | Rejected by this adapter |
 
@@ -56,7 +56,7 @@ outside the repository in a private owner controlled file:
 
 ```json
 {
-  "pythonPath": "C:\\private\\adaptany-ecovacs-venv\\Scripts\\python.exe",
+  "pythonPath": "C:\\private\\anyadapter-ecovacs-venv\\Scripts\\python.exe",
   "credentialFile": "C:\\private\\ecovacs\\credentials.bin",
   "selectedDeviceSha256": "<64 lowercase hexadecimal characters from the enrolled selected device ID>"
 }

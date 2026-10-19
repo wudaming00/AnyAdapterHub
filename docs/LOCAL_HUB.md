@@ -1,6 +1,6 @@
 # 本地 Device Hub
 
-AdaptAny 是独立进程。CLI、Node SDK 或后续 Collie 客户端都通过本地 HTTP API 使用它。它不依赖某个 Agent，也不会自动配对电视、修改固件、取得 root 或安装系统开机任务。
+AnyAdapter Hub 是独立进程。CLI、Node SDK 或后续 Collie 客户端都通过本地 HTTP API 使用它。它不依赖某个 Agent，也不会自动配对电视、修改固件、取得 root 或安装系统开机任务。
 
 以下说明对应当前代码行为。单台 B8 的 Hub HTTP 链路已有有限真机验证，具体范围见文末；不能据此宣称全部能力或其他设备都已验证。
 

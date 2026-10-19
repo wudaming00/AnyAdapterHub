@@ -1,6 +1,6 @@
 # Security review and release checks
 
-Review date: **2026-10-19**. Scope: the initial AdaptAny local Hub, LG webOS adapter/temporary observer, persistence and HTTP policy, plus the optional ECOVACS integration boundary. This is an implementation self-review with offline regressions. It is not an independent penetration test, vendor endorsement, formal proof or guarantee against unauthorized household control. See [SECURITY.md](../SECURITY.md) for the public policy and private reporting process.
+Review date: **2026-10-19**. Scope: the initial AnyAdapter Hub local Hub, LG webOS adapter/temporary observer, persistence and HTTP policy, plus the optional ECOVACS integration boundary. This is an implementation self-review with offline regressions. It is not an independent penetration test, vendor endorsement, formal proof or guarantee against unauthorized household control. See [SECURITY.md](../SECURITY.md) for the public policy and private reporting process.
 
 Code controls and deployment assumptions are separated below. Exact hardware evidence belongs in [Supported devices](SUPPORTED_DEVICES.md); a passing fixture does not establish hardware compatibility.
 

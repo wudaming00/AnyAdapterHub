@@ -1,6 +1,6 @@
 # Related projects
 
-AdaptAny is an independent local device hub. The name comes from “adapt any device”; public naming searches are not trademark or domain clearance. The comparisons below describe upstream documentation as reviewed on 2026-10-19 and do not certify security or interoperability.
+AnyAdapter Hub is an independent local device hub. The name describes a hub of device adapters for agents; AnyAdapter is its short name. Public naming searches are not trademark or domain clearance. The comparisons below describe upstream documentation as reviewed on 2026-10-19 and do not certify security or interoperability.
 
 ## 相近开源项目
 

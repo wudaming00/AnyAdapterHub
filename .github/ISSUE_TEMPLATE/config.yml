@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability privately
-    url: https://github.com/wudaming00/AdaptAny/security/advisories/new
+    url: https://github.com/wudaming00/AnyAdapterHub/security/advisories/new
     about: Do not include exploit details, credentials, maps or household identifiers in public issues.

@@ -1,4 +1,6 @@
-# AdaptAny · 万能适配
+# AnyAdapter Hub · 万能适配
+
+简称 **AnyAdapter**。
 
 让 Agent 在用户授权范围内连接、观察和控制家庭设备。它是独立运行的本地中枢，使用 HTTP、SSE 和 JavaScript SDK；Collie 或其他 Agent 可以作为客户端接入。MCP 保留为早期可选入口，中枢不依赖它。
 

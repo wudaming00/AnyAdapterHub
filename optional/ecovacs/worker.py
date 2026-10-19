@@ -92,7 +92,7 @@ class EncryptedStore:
         # Re-read to avoid restoring an old selection after another owner process changed it.
         record = self.load()
         record["account"] = account
-        encrypted = win32crypt.CryptProtectData(json.dumps(record).encode(), "AdaptAny ECOVACS", None, None, None, 1)
+        encrypted = win32crypt.CryptProtectData(json.dumps(record).encode(), "AnyAdapter Hub ECOVACS", None, None, None, 1)
         temporary = self.file.with_name("credentials-" + uuid.uuid4().hex + ".tmp")
         try:
             with temporary.open("xb") as handle:

@@ -11,7 +11,7 @@ import { LGWebOSAdapter } from './lib/adapters/lg-webos.mjs';
 import { ECOVACSX11Adapter } from './lib/adapters/ecovacs-x11.mjs';
 import { ACTIONS, READ_CAPABILITIES } from './lib/hub/policy.mjs';
 
-const HELP = `AdaptAny local device hub
+const HELP = `AnyAdapter Hub local device hub
   node device-hub.mjs init --tv-config FILE --host PRIVATE_IP [--id living-room-tv] [--port 8765]
   node device-hub.mjs init --ecovacs-config FILE [--id vacuum] [--port 8765]
   node device-hub.mjs add --ecovacs-config FILE [--id vacuum] [--home .device-hub]

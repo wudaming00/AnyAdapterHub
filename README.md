@@ -1,10 +1,10 @@
-# AdaptAny
+# AnyAdapter Hub
 
-**A local device hub for agents.** Connect devices through reviewed adapters, grant precise permissions, and distinguish accepted commands from observed outcomes.
+**A local device hub for agents.** AnyAdapter for short. Connect devices through reviewed adapters, grant precise permissions, and distinguish accepted commands from observed outcomes.
 
 [中文](README.zh-CN.md) · [Supported devices](docs/SUPPORTED_DEVICES.md) · [Security](SECURITY.md) · [Adapter requirements](docs/ADAPTER_REQUIREMENTS.md)
 
-AdaptAny runs independently of any agent framework. Clients use loopback HTTP, SSE, or the JavaScript SDK. Collie and other agents can connect as clients; MCP is an optional legacy interface.
+AnyAdapter Hub runs independently of any agent framework. Clients use loopback HTTP, SSE, or the JavaScript SDK. Collie and other agents can connect as clients; MCP is an optional legacy interface.
 
 **Development preview.** This is an owner-operated research project, not a production security boundary. It has not received an independent security audit. Do not expose the hub or device interfaces to the internet. npm publication remains disabled.
 
@@ -71,6 +71,6 @@ These controls do not isolate an agent with full shell access under the same OS 
 
 Start with a sanitized exact-model report or a small adapter with a narrow permission surface. [CONTRIBUTING.md](CONTRIBUTING.md) explains evidence and review requirements. Do not submit pairing keys, account tokens, raw maps, screenshots of personal content, or private network details.
 
-Report vulnerabilities privately using [GitHub's vulnerability report form](https://github.com/wudaming00/AdaptAny/security/advisories/new). Do not publish exploit details or household identifiers in ordinary issues.
+Report vulnerabilities privately using [GitHub's vulnerability report form](https://github.com/wudaming00/AnyAdapterHub/security/advisories/new). Do not publish exploit details or household identifiers in ordinary issues.
 
 MIT for the core; the optional ECOVACS Python worker is GPL-3.0-or-later. Separately installed dependencies retain their own notices. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

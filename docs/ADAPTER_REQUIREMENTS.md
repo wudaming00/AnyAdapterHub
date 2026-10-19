@@ -1,6 +1,6 @@
 # Adapter requirements
 
-An AdaptAny adapter turns a known device protocol into bounded capabilities with observable results. Adding a model profile is a data contribution; adding protocol behavior is a code contribution. Neither establishes ownership, grants permissions or proves hardware support by itself.
+An AnyAdapter Hub adapter turns a known device protocol into bounded capabilities with observable results. Adding a model profile is a data contribution; adding protocol behavior is a code contribution. Neither establishes ownership, grants permissions or proves hardware support by itself.
 
 These are contribution and review requirements, not a claim that the project has passed an independent security audit. See [SECURITY.md](../SECURITY.md) for the current deployment limits.
 

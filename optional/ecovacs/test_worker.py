@@ -6,7 +6,7 @@ from hashlib import sha256
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-spec = importlib.util.spec_from_file_location("adaptany_ecovacs_worker", Path(__file__).with_name("worker.py"))
+spec = importlib.util.spec_from_file_location("anyadapter_ecovacs_worker", Path(__file__).with_name("worker.py"))
 worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)
 

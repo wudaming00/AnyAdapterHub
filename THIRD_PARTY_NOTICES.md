@@ -4,7 +4,7 @@
 [hobbyquaker/lgtv2](https://github.com/hobbyquaker/lgtv2/tree/80ef796846730cb4331f33be38221de7485afc55).
 The original MIT notice is retained in `third_party/lgtv2-LICENSE.txt`; provenance,
 revision and integrity hash are retained in `third_party/provenance.json` and
-verified by the pairing loader. It is not a credential issued to AdaptAny.
+verified by the pairing loader. It is not a credential issued to AnyAdapter Hub.
 
 `ws` is separately licensed by its upstream authors; its notice is installed
 with the pinned dependency. No SlopBro autoroot payload or persistence installer

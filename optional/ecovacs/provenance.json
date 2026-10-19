@@ -1,5 +1,5 @@
 {
-  "component": "AdaptAny optional ECOVACS X11 worker",
+  "component": "AnyAdapter Hub optional ECOVACS X11 worker",
   "workerLicense": "GPL-3.0-or-later",
   "upstream": {
     "name": "deebot-client",

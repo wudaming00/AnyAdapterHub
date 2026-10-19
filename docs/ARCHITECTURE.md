@@ -1,6 +1,6 @@
 # 架构与能力边界
 
-项目名称为 **AdaptAny（万能适配）**。核心是独立的本地设备服务：任何经过授权的客户端都可以提交动作、读取状态和接收事件。Collie 可以作为客户端，核心不依赖 Collie、特定 Agent 或 MCP。
+项目名称为 **AnyAdapter Hub（万能适配）**。核心是独立的本地设备服务：任何经过授权的客户端都可以提交动作、读取状态和接收事件。Collie 可以作为客户端，核心不依赖 Collie、特定 Agent 或 MCP。
 
 ```mermaid
 flowchart LR

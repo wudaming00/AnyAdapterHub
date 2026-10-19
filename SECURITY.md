@@ -1,6 +1,6 @@
 # Security policy
 
-AdaptAny can operate household devices and, when separately authorized, read a television's screen. Treat control and observation credentials as access to your home. This early project has not received an independent security audit or certification. Passing tests and publishing source do not establish a security guarantee.
+AnyAdapter Hub can operate household devices and, when separately authorized, read a television's screen. Treat control and observation credentials as access to your home. This early project has not received an independent security audit or certification. Passing tests and publishing source do not establish a security guarantee.
 
 The implementation review, regression tests, remaining risks and release checklist are in [Security review](docs/SECURITY_REVIEW.md). New adapters must meet [Adapter requirements](docs/ADAPTER_REQUIREMENTS.md).
 
@@ -8,7 +8,7 @@ The implementation review, regression tests, remaining risks and release checkli
 
 Run the Hub on a computer, OS account and local network you trust. Its HTTP API binds to `127.0.0.1`; it is not designed for public exposure or arbitrary LAN clients. A reverse proxy, tunnel, port forward, permissive CORS or broader bind address requires a separate authentication and transport review.
 
-The Hub protects its API against clients with narrower grants. It does **not** sandbox code running as the same OS user. An agent that can read owner files, execute local code or change the Hub can bypass API permissions. Use separate OS accounts or a suitable process/container boundary for an untrusted agent. That isolation is a deployment responsibility, not an isolation facility supplied by AdaptAny.
+The Hub protects its API against clients with narrower grants. It does **not** sandbox code running as the same OS user. An agent that can read owner files, execute local code or change the Hub can bypass API permissions. Use separate OS accounts or a suitable process/container boundary for an untrusted agent. That isolation is a deployment responsibility, not an isolation facility supplied by AnyAdapter Hub.
 
 Only operate devices you own or are authorized to manage. Discovery and reachability do not establish ownership. Setup must deliberately bind a local opaque device ID to one selected device, region/account where applicable, and owner-approved credentials. Never select the first discovered device as a fallback.
 
@@ -24,7 +24,7 @@ Revocation cannot undo a dispatched action, recover a disclosed image or retract
 
 ## Permissions that need special care
 
-Navigation, pointer input, text entry, URL access, casting and vacuum movement are consequential permissions. A permitted key/click can interact with purchases, accounts or settings inside the current app. AdaptAny does not understand every app's UI and has no app-independent purchase, parental-control or setting-confirmation policy. Do not give broad UI permissions to an untrusted agent assuming every permitted sequence is safe.
+Navigation, pointer input, text entry, URL access, casting and vacuum movement are consequential permissions. A permitted key/click can interact with purchases, accounts or settings inside the current app. AnyAdapter Hub does not understand every app's UI and has no app-independent purchase, parental-control or setting-confirmation policy. Do not give broad UI permissions to an untrusted agent assuming every permitted sequence is safe.
 
 Screens, webpages, subtitles, app metadata, room names, device strings and contributed evidence can contain prompt injection. Treat them as untrusted data. They cannot authorize tool calls, grant capabilities, disclose secrets or change dispatch targets. Keep policy and owner approval outside model-generated text. `playing` may describe a homepage preview; foreground/transport checks do not prove a particular title is playing or a cleaning task is complete.
 

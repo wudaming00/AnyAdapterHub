@@ -1,6 +1,6 @@
 # Roadmap
 
-AdaptAny is a development preview of a local device control and observation layer for agents. The goal is to make permissions, targets and outcomes understandable across devices, while keeping the Hub independent of an agent framework.
+AnyAdapter Hub is a development preview of a local device control and observation layer for agents. The goal is to make permissions, targets and outcomes understandable across devices, while keeping the Hub independent of an agent framework.
 
 This is an ordered engineering plan, not a delivery schedule or compatibility promise. [Supported devices](SUPPORTED_DEVICES.md) is the source of truth for hardware evidence. A public repository, passing CI or an available upstream API does not make an integration production-ready.
 

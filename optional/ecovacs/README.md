@@ -14,8 +14,8 @@ Redistributors must preserve the applicable licenses and source obligations.
 Install the optional dependencies into an owner managed virtual environment:
 
 ```powershell
-py -3.14 -m venv C:\private\adaptany-ecovacs-venv
-& C:\private\adaptany-ecovacs-venv\Scripts\python.exe -m pip install -r optional/ecovacs/requirements.txt
+py -3.14 -m venv C:\private\anyadapter-ecovacs-venv
+& C:\private\anyadapter-ecovacs-venv\Scripts\python.exe -m pip install -r optional/ecovacs/requirements.txt
 ```
 
 The two direct dependencies are pinned. Transitive dependencies are resolved by
@@ -27,7 +27,7 @@ the worker fails closed on another version. The worker disables the SDK's HTTP
 Run the pure safety tests without logging into an account or contacting a robot:
 
 ```powershell
-& C:\private\adaptany-ecovacs-venv\Scripts\python.exe -m unittest discover -s optional/ecovacs -p test_worker.py -v
+& C:\private\anyadapter-ecovacs-venv\Scripts\python.exe -m unittest discover -s optional/ecovacs -p test_worker.py -v
 ```
 
 See [`docs/ECOVACS_X11.md`](../../docs/ECOVACS_X11.md) for the supported hardware,

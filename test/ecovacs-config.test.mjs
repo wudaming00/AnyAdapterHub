@@ -6,7 +6,7 @@ import path from 'node:path';
 import { validateECOVACSConfig, loadECOVACSConfig } from '../lib/adapters/ecovacs-config.mjs';
 
 async function fixture(t) {
-  const directory = await mkdtemp(path.join(tmpdir(), 'adaptany-ecovacs-config-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'anyadapter-ecovacs-config-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const pythonPath = path.join(directory, 'python.exe'); const credentialFile = path.join(directory, 'credentials.bin');
   await writeFile(pythonPath, 'fake executable used only for file checks'); await writeFile(credentialFile, 'encrypted fixture');

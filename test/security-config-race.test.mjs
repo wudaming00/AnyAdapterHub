@@ -9,7 +9,7 @@ import { readJson } from '../lib/hub/config.mjs';
 // Only temporary fixture files are touched. Updating the built-in export keeps
 // the production named import intact while making a specific race deterministic.
 async function fixture(t) {
-  const directory = await fs.mkdtemp(path.join(tmpdir(), 'adaptany-config-race-'));
+  const directory = await fs.mkdtemp(path.join(tmpdir(), 'anyadapter-config-race-'));
   const file = path.join(directory, 'config.json');
   const replacement = path.join(directory, 'replacement.json');
   await fs.writeFile(file, '{"fixture":"selected"}');

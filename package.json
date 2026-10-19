@@ -1,5 +1,5 @@
 {
-  "name": "adaptany",
+  "name": "anyadapter-hub",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -51,10 +51,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/wudaming00/AdaptAny.git"
+    "url": "https://github.com/wudaming00/AnyAdapterHub.git"
   },
   "bugs": {
-    "url": "https://github.com/wudaming00/AdaptAny/issues"
+    "url": "https://github.com/wudaming00/AnyAdapterHub/issues"
   },
-  "homepage": "https://github.com/wudaming00/AdaptAny#readme"
+  "homepage": "https://github.com/wudaming00/AnyAdapterHub#readme"
 }
