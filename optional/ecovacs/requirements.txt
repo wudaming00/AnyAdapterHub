@@ -1,0 +1,2 @@
+deebot-client==18.7.0
+pywin32==312; sys_platform == "win32"

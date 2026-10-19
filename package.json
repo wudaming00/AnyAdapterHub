@@ -1,0 +1,60 @@
+{
+  "name": "adaptany",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local device hub for agents: explicit permissions, observable outcomes, community adapters",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "discover": "node discover.mjs",
+    "hub": "node device-hub.mjs",
+    "test": "node --test",
+    "check:profiles": "node scripts/check-profiles.mjs",
+    "check:package": "node scripts/check-package.mjs",
+    "check": "npm test && npm run check:profiles && npm run check:package && npm run check:public",
+    "check:public": "node scripts/check-public.mjs"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "license": "MIT AND GPL-3.0-or-later",
+  "files": [
+    "lib/",
+    "device-hub.mjs",
+    "mcp-tv.mjs",
+    "lg-tv.mjs",
+    "discover.mjs",
+    "inspect-public.mjs",
+    "profiles/",
+    "schema/",
+    "privileged-probe/bridge-observe.html",
+    "privileged-probe/capture-cleanup.js",
+    "scripts/",
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "docs/",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "third_party/lgtv2-pairing.json",
+    "third_party/lgtv2-LICENSE.txt",
+    "third_party/provenance.json",
+    "README.zh-CN.md",
+    "optional/ecovacs/worker.py",
+    "optional/ecovacs/test_worker.py",
+    "optional/ecovacs/requirements.txt",
+    "optional/ecovacs/LICENSE",
+    "optional/ecovacs/README.md",
+    "optional/ecovacs/provenance.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wudaming00/AdaptAny.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wudaming00/AdaptAny/issues"
+  },
+  "homepage": "https://github.com/wudaming00/AdaptAny#readme"
+}

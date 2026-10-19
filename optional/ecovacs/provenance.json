@@ -1,0 +1,32 @@
+{
+  "component": "AdaptAny optional ECOVACS X11 worker",
+  "workerLicense": "GPL-3.0-or-later",
+  "upstream": {
+    "name": "deebot-client",
+    "version": "18.7.0",
+    "repository": "https://github.com/DeebotUniverse/client.py",
+    "reviewedSource": "https://github.com/DeebotUniverse/client.py/tree/18.7.0",
+    "license": "GPL-3.0-or-later",
+    "licenseSource": "https://github.com/DeebotUniverse/client.py/blob/18.7.0/LICENSE.txt",
+    "distribution": "Installed separately with pip; no SDK source or wheels bundled"
+  },
+  "otherDirectDependency": {
+    "name": "pywin32",
+    "version": "312",
+    "repository": "https://github.com/mhammond/pywin32",
+    "purpose": "Current Windows user DPAPI credential encryption"
+  },
+  "reviewedBehavior": [
+    "Exact US account region; exact selected device fingerprint; vacuum class huhcip only",
+    "No default device fallback, device selector, arbitrary commands, map reads or camera access",
+    "deebot_client.authentication.MAX_RETRIES forced to 1 in the isolated interpreter",
+    "Clean, CleanV2 and Charge movement command classes only",
+    "Read-only command classes are allowlisted; no Device object or MQTT subscriptions"
+  ],
+  "checkedAt": "2026-10-19",
+  "limitations": [
+    "Dependency transitive graph is not locked",
+    "New bridge has not yet been verified with live device movement",
+    "Independent security review is still required"
+  ]
+}

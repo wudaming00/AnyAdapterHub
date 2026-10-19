@@ -1,0 +1,4 @@
+* text=auto eol=lf
+# Preserve pinned upstream bytes used by the integrity loader.
+third_party/lgtv2-pairing.json -text
+third_party/lgtv2-LICENSE.txt -text

@@ -1,0 +1,104 @@
+# Security review and release checks
+
+Review date: **2026-10-19**. Scope: the initial AdaptAny local Hub, LG webOS adapter/temporary observer, persistence and HTTP policy, plus the optional ECOVACS integration boundary. This is an implementation self-review with offline regressions. It is not an independent penetration test, vendor endorsement, formal proof or guarantee against unauthorized household control. See [SECURITY.md](../SECURITY.md) for the public policy and private reporting process.
+
+Code controls and deployment assumptions are separated below. Exact hardware evidence belongs in [Supported devices](SUPPORTED_DEVICES.md); a passing fixture does not establish hardware compatibility.
+
+## Assets and trust boundaries
+
+Protected assets include device operation, household presence/state, screens/account content, local media, pairing/cloud credentials, owner authority, operation history and the ability to stop or revoke a client.
+
+Consider a remote attacker who places malicious content in front of an agent; a webpage contacting localhost; a scoped client submitting hostile JSON or queuing work; a contributor supplying misleading profiles; a hostile device/LAN peer supplying protocol strings; accidental cross-household/account selection; and stale or ambiguous state.
+
+The owner, reviewed Hub/adapter code, OS account and configured interpreter are trusted. Profiles are data. Screens and responses are data. An agent with only a scoped token has narrower authority than the owner. An agent with owner file access or local code execution does not have that isolation. Dependencies and administrators can bypass application policy. Device/cloud protocols have separate identity/confidentiality limits.
+
+```text
+Owner setup -> private config/credentials -> reviewed adapter -> selected device
+                          |
+Scoped agent -> loopback API -> grant + schema + queue -> pre-write check
+                          |
+               redacted state / operation evidence
+                          |
+              separately authorized expiring frames
+
+Community profile -> strict data validation -> compatibility information only
+Device screen/text -> untrusted observations -> never a source of authority
+```
+
+## Methodology: establish authority before interpreting intent
+
+1. **Identify one household target.** The owner selects a device and opaque local ID. LG uses an existing approved pairing and fixed local host; wake uses a configured MAC. Observation additionally checks the exact reviewed model/firmware. ECOVACS checks its selected-device fingerprint, cloud device ID, supported class and US region. Discovery, brand matching or status access is not authorization. Reconnect must not silently substitute another device.
+2. **Constrain the client.** Keep owner credentials out of the agent. Grant exact device/action pairs with explicit expiry. Separate state, app inventory, capture and frame reading. No prompt, profile or device response can enlarge the fixed capability registry or satisfy a local privileged opt-in.
+3. **Validate intent as data.** Reject unknown fields/actions, prototype-related keys, malformed identifiers, out-of-range values, arbitrary endpoints/launch parameters and unapproved file/URL destinations. Do not provide generic shell, Luna, HTTP or vendor-service passthrough.
+4. **Serialize and recheck at the effect boundary.** The device queue includes polling, control and observation; a late restore must not overwrite the next action. Recheck grant, revocation and deadline after asynchronous preparation and immediately before writes, including each mutation in multi-step playback. Queue admission is not permanent authority.
+5. **Observe and preserve uncertainty.** Record fresh readback, source, expiry and verification scope. Acceptance, a pointer frame or a connection does not prove a visible/physical result. Do not repeat ambiguous writes. Restart cancels queued work and marks interrupted running work `unknown`; it never replays it.
+6. **Finish restricted cleanup.** A started observation owns closing its overlay/listener and restoring the previous app. These cleanup actions continue after initiating-grant expiry. Delete only owned per-run resources and verify absence where supported. Report incomplete cleanup/restoration.
+
+Authorization is capability-based, not a semantic proof of intent. Broad navigation can reach purchases or settings. A vacuum can encounter objects, people or pets. There is no app-independent purchase guard, physical obstacle guarantee or replacement for device safety mechanisms. Use narrow grants and appropriate human supervision.
+
+## Implemented controls and limits
+
+| Threat | Code control | Residual boundary |
+| --- | --- | --- |
+| Remote network client | Fixed loopback listener, Bearer authentication, no public-bind option | A proxy/tunnel or compromised host defeats deployment assumptions; remote access is unsupported. |
+| Malicious webpage or DNS rebinding | Exact Host/Origin checks, JSON content type, no permissive CORS, query-token rejection | Origin is not authentication. Same-user local code may steal credentials. |
+| Cross-device/capability escalation | Exact grants, owner-only management, per-adapter action registry, fixed schemas | UI actions remain broad. Upstream pairing/cloud credentials may cover more than the scoped grant. |
+| Late revoked/expired work | Queue and pre-write checks; cloud preflight dispatch handshake | Dispatched requests/acknowledgements cannot be recalled; an existing effect can continue. |
+| Duplicate or ambiguous writes | Client/key uniqueness and request hash, conflict rejection, no replay/retry | Different keys are different commands. Upstream devices are not transactional; partial effects cannot be undone by idempotency. |
+| Cross-client disclosure | Requester ownership for operation lookup, device-scoped reads, sanitized errors/state, separate frames | `screen.read` permits retained frames for its device. The screen itself can contain private content. |
+| Malicious profile/evidence | Strict bounded parser/schema, exact identities, fixed capability references, no scripts/endpoints | Evidence can be fabricated or mistaken; executable adapters/dependencies are trusted code. |
+| Callback substitution | Fixed bridge calls/routes, random per-run token, exact TV source, time/byte limits, owned cleanup | HTTP and unpinned WSS do not defeat every LAN middleperson or impersonation. |
+| File exfiltration by casting | Explicit roots, realpath/type checks, same validated file handle, source/token route | OS/filesystem integrity is assumed; intentional exports are outside frame retention. |
+| Prompt injection | Device-output projections; outputs cannot define grants, commands or destinations | The Hub cannot guarantee model reasoning; a client can misuse authority already granted to it. |
+| Resource exhaustion | Bounded bodies/headers/concurrency, queues, callbacks, frames and journal | No sustained rate limit or lifetime operation database quota; authorized flooding can exhaust disk. |
+
+## Finding fixed before initial publication
+
+### LG checks preceded asynchronous controller preparation
+
+The adapter checked the grant before invoking a controller method, but launch first awaited app metadata, text waited for focus, pointer input waited for a WebSocket handshake, DLNA discovered/connected or completed a prior playback step, and wake waited for UDP binding. Revocation/expiry during these intervals could otherwise precede a device write.
+
+The fix scopes a trusted dispatch guard to one execution with `AsyncLocalStorage`. SSAP mutations and pointer sends repeat it at the write boundary. DLNA checks each SOAP mutation, including `Play` after `SetAVTransportURI`; wake checks after bind and before sending. Readback remains available for reconciliation. The guard is not a JSON argument or connection-wide mutable permission. Observation checks after preflight immediately before its fixed overlay launch; restoration remains outside that initiating guard.
+
+[security-dispatch.test.mjs](../test/security-dispatch.test.mjs) covers revocation during app lookup, keyboard focus, pointer handshake and DLNA discovery; expiry during app lookup; revocation between DLNA writes; wake binding; guard lifetime; observer preflight denial and cleanup after partial launch; and an immutable LG-only action registry. Its 12 regressions passed during this review using synthetic protocols/callbacks and no television or vacuum.
+
+Operation states remain conservative: a failure after dispatch checks can be `unknown`, even if a later check prevents a particular write. A partial multi-step effect is never described as rolled back.
+
+## Privacy and operational assumptions
+
+The Hub directory is new/empty at initialization or must have a valid existing Hub marker. Links/junctions and unexpected immediate children are rejected. POSIX ownership/modes and Windows current-user+SYSTEM DACLs are checked. Initialization rolls back only its newly created files. These controls do not isolate same-account code or administrators. External credential-file permissions need their own review.
+
+Client tokens are random and persisted as hashes. Owner/CLI credentials and LG pairing keys still rely on OS file access rather than a keychain. The optional ECOVACS worker uses Windows DPAPI, a fixed worker path and separately installed version-pinned SDK. A worker process is not a sandbox against trusted same-user code. Cloud credential refresh is an expected private-file write; it does not authorize another selected device.
+
+Images are private content. Retained frames are separate from ordinary events, expire within five minutes and are bounded to five/device and 32 MiB total. Expiry immediately denies reads; logical pruning is periodic. `secure_delete` is not forensic erasure. WAL, backups, image exports and already delivered content need separate retention handling. Never publish household screenshots/maps, account/device identifiers, callback URLs, pairing keys or raw diagnostics.
+
+The journal retains 10,000 events and can have cursor gaps. Operations/idempotency persist for database lifetime. Monitor disk growth; concurrency bounds do not prevent sustained database growth. Safe archival must retain enough deduplication history to prevent replay and is not implemented.
+
+External URLs require exact configured origins. A hostname can change address and a TV can follow redirects; the Hub does not mediate every subsequent fetch. Literal-address rejection is not a general SSRF proof. Use trusted origins and network isolation where required. There has been no independent audit of a hostile LAN or vendor service.
+
+## Validation map
+
+| Area | Offline evidence |
+| --- | --- |
+| HTTP denial, hostile Host/Origin, scoped grants, cross-client operations, SSE revoke, idempotency | [hub-http.test.mjs](../test/hub-http.test.mjs), [hub-runtime.test.mjs](../test/hub-runtime.test.mjs) |
+| Strict schemas, URL origins, media roots, secret projections | [hub-policy.test.mjs](../test/hub-policy.test.mjs), [media-host.test.mjs](../test/media-host.test.mjs) |
+| Private initialization, ACLs/modes, links, partial writes | [hub-config.test.mjs](../test/hub-config.test.mjs); OS-specific cases only run on the applicable OS |
+| Atomic operation/events, deduplication, recovery, journal/frame bounds | [hub-store.test.mjs](../test/hub-store.test.mjs) |
+| Device queue, stale state, reconnect reconciliation, observation projection | [lg-adapter.test.mjs](../test/lg-adapter.test.mjs) |
+| Asynchronous effect-boundary revocation/expiry and cleanup | [security-dispatch.test.mjs](../test/security-dispatch.test.mjs) |
+| Callback identity, size, teardown and restoration | [tv-observer.test.mjs](../test/tv-observer.test.mjs), [bridge-observe.test.mjs](../test/bridge-observe.test.mjs) |
+| Ordinary protocols, pointer/capture target binding, DLNA partial failure | [controller.test.mjs](../test/controller.test.mjs), [ssap.test.mjs](../test/ssap.test.mjs), [dlna.test.mjs](../test/dlna.test.mjs) |
+| Profile data and privilege non-escalation | [device-profile.test.mjs](../test/device-profile.test.mjs), `npm run check:profiles` |
+
+This map describes intended test coverage, not every possible attack. No cross-platform penetration test or formal isolation proof was performed. Hardware evidence can predate a code change and covers only its stated devices/capabilities; reread it before relying on it.
+
+## Release and adapter checklist
+
+- Review the actual diff, action registry, device binding, grant/deadline behavior, targets and cleanup ownership. Higher-impact actions need separate review, not reuse of a generic switch/navigation capability.
+- Run `npm ci`, `npm test`, profile checks and package/public-source checks. Record the actual revision/results. Test new dispatch paths for denial, delayed revoke/expiry and ambiguous failure; do not infer results for a different OS.
+- Review lockfile/dependency changes, optional interpreter/SDK versions, installation steps and licenses. A profile must not select modules, commands or arbitrary URLs. Do not describe a worker as a same-user sandbox.
+- Inspect the explicit Git/package file list. Exclude live Hub homes, credentials, personal images, logs, lab captures, private diagnostics and unreviewed exploit material. Secret scanners supplement human review and cannot prove complete absence. Rotate exposed credentials.
+- Verify local listening, Host/Origin rejection and private directory protection in a clean setup. Test a narrow short-lived client grant, denial, revoke/expiry and no replay with fixtures before a harmless owner-supervised device test.
+- Confirm one selected household device/region and exact hardware evidence. For a reversible live test, choose a safe target, record baseline, perform one bounded change, read back, restore and verify. Acceptance alone cannot promote another model or room action to verified.
+- Verify frame/export handling, owned cleanup and shutdown. Keep an owner stop/revoke path, backups and a disk-growth plan. Revocation cannot replace physical device safety or undo prior effects.
+- Keep private security reporting usable and release notes explicit about fixes/limits. Install the intended revision and restart the daemon; a source update does not patch a running process. Do not promise a response SLA or maintenance window that is not supported.

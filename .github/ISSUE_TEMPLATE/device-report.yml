@@ -1,0 +1,32 @@
+name: Device compatibility report
+description: Submit exact model and firmware evidence without household identifiers.
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach credentials, IP/MAC addresses, device IDs, maps, personal screenshots or raw logs. Use private vulnerability reporting for security issues.
+  - type: input
+    id: model
+    attributes:
+      label: Vendor and exact model
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Exact firmware and software version
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Capabilities and sanitized evidence
+      description: Separate command acceptance, state readback, and visible results; describe restoration and limitations.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy review
+      options:
+        - label: I tested a device I own or administer and removed household identifiers and credentials.
+          required: true

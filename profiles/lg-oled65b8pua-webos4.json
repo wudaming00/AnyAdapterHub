@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "id": "lg-oled65b8pua-webos4",
+  "vendor": "LG",
+  "model": "OLED65B8PUA",
+  "firmware": [
+    "05.50.70"
+  ],
+  "adapter": "lg-webos",
+  "capabilityIds": [
+    "tv_status",
+    "tv_apps",
+    "tv_keyboard_state",
+    "tv_screenshot",
+    "tv_launch",
+    "tv_launch_content",
+    "tv_open_url",
+    "tv_play_url",
+    "tv_dlna_play",
+    "tv_dlna_status",
+    "tv_dlna_media",
+    "tv_cast_file",
+    "tv_type_text",
+    "tv_key",
+    "tv_pointer_move",
+    "tv_pointer_click",
+    "tv_pointer_scroll",
+    "tv_media",
+    "tv_set_volume",
+    "tv_mute",
+    "tv_set_input",
+    "tv_sound_output",
+    "tv_screen",
+    "tv_power",
+    "temporary-observe"
+  ],
+  "verification": {
+    "tv_status": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_status"
+      ]
+    },
+    "tv_apps": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_apps"
+      ]
+    },
+    "tv_keyboard_state": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_keyboard_state"
+      ]
+    },
+    "tv_screenshot": {
+      "status": "unsupported",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_screenshot"
+      ]
+    },
+    "tv_launch": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_launch"
+      ]
+    },
+    "tv_launch_content": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_launch_content"
+      ]
+    },
+    "tv_open_url": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_open_url"
+      ]
+    },
+    "tv_play_url": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_play_url"
+      ]
+    },
+    "tv_dlna_play": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_dlna_play"
+      ]
+    },
+    "tv_dlna_status": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_dlna_status"
+      ]
+    },
+    "tv_dlna_media": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_dlna_media"
+      ]
+    },
+    "tv_cast_file": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_cast_file"
+      ]
+    },
+    "tv_type_text": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_type_text"
+      ]
+    },
+    "tv_key": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_key"
+      ]
+    },
+    "tv_pointer_move": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_pointer_move"
+      ]
+    },
+    "tv_pointer_click": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_pointer_click"
+      ]
+    },
+    "tv_pointer_scroll": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_pointer_scroll"
+      ]
+    },
+    "tv_media": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_media"
+      ]
+    },
+    "tv_set_volume": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_set_volume"
+      ]
+    },
+    "tv_mute": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_mute"
+      ]
+    },
+    "tv_set_input": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_set_input"
+      ]
+    },
+    "tv_sound_output": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_sound_output"
+      ]
+    },
+    "tv_screen": {
+      "status": "unverified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_screen"
+      ]
+    },
+    "tv_power": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#tv_power"
+      ]
+    },
+    "temporary-observe": {
+      "status": "verified",
+      "evidence": [
+        "docs/evidence/lg-b8-2026-10-19.md#temporary-observe"
+      ],
+      "optInRequired": true
+    }
+  }
+}

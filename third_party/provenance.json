@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/hobbyquaker/lgtv2",
+  "revision": "80ef796846730cb4331f33be38221de7485afc55",
+  "license": "MIT",
+  "note": "Public third-party legacy compatibility manifest, not a signature issued to this app.",
+  "sources": [
+    {
+      "source": "https://raw.githubusercontent.com/hobbyquaker/lgtv2/80ef796846730cb4331f33be38221de7485afc55/pairing.json",
+      "file": "third_party/lgtv2-pairing.json",
+      "sha256": "2159d4e54dc38e3626a95f496a2e6c2f071b541bd07e2e0657c8acbbcdd9d9e8"
+    },
+    {
+      "source": "https://raw.githubusercontent.com/hobbyquaker/lgtv2/80ef796846730cb4331f33be38221de7485afc55/LICENSE",
+      "file": "third_party/lgtv2-LICENSE.txt",
+      "sha256": "2e298e11707b154ae2daab03e32f444ea3235a3586b5f8e507ec9b24b39da56a"
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Temporary TV observer</title>
+<style>html,body{margin:0;padding:0;background:transparent!important;color:transparent;pointer-events:none;overflow:hidden}</style>
+</head><body><script src="capture-cleanup.js"></script><script>
+(function () {
+  'use strict';
+  var config = __LG_AGENT_CONFIG__;
+  var origin = location.protocol + '//' + location.host;
+  var address = String(location.hostname || '').split('.');
+  var privateAddress = address.length === 4 && address.every(function (part) {
+    return /^\d{1,3}$/.test(part) && Number(part) <= 255 && String(Number(part)) === part;
+  }) && (Number(address[0]) === 10 || (Number(address[0]) === 172 && Number(address[1]) >= 16 && Number(address[1]) <= 31) ||
+    (Number(address[0]) === 192 && Number(address[1]) === 168));
+  if (!config || typeof config.runId !== 'string' || !/^[a-f0-9]{8,64}$/.test(config.runId) ||
+      typeof config.token !== 'string' || !/^[a-f0-9]{32,128}$/.test(config.token) ||
+      config.callbackOrigin !== origin || location.protocol !== 'http:' || !privateAddress) return;
+  var duration = config.durationMs === undefined ? 30000 : config.durationMs;
+  var interval = config.intervalMs === undefined ? 5000 : config.intervalMs;
+  var sampleLimit = config.sampleLimit === undefined ? null : config.sampleLimit;
+  var screenshot = config.screenshot === undefined ? true : config.screenshot;
+  if (typeof duration !== 'number' || duration % 1 || duration < 1000 || duration > 120000 ||
+      typeof interval !== 'number' || interval % 1 || interval < 1000 || interval > 30000 ||
+      (config.sampleLimit !== undefined && (typeof sampleLimit !== 'number' || sampleLimit % 1 || sampleLimit < 1 || sampleLimit > 10)) ||
+      typeof screenshot !== 'boolean') return;
+  var base = origin + '/' + config.token;
+  var capturePath = '/media/internal/downloads/lg-agent-probe-' + config.runId + '.jpg';
+  var began = Date.now();
+  var stopped = false;
+  var nextTimer;
+  var stopTimer;
+  var bridges = [];
+  var sequence = 0;
+  var failures = [];
+  var cancelCleanup = null;
+  function safeText(value) {
+    return String(value || '').split(config.token).join('[redacted]')
+      .replace(/(?:https?|wss?):\/\/[^\s"'<>]+/gi, '[redacted-url]')
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]').slice(0, 2048);
+  }
+  function project(value, depth) {
+    if (!value || typeof value !== 'object') return typeof value === 'string' ? safeText(value) : value;
+    if ((depth || 0) > 6) return '[depth-limit]';
+    if (Array.isArray(value)) return value.slice(0, 32).map(function (item) { return project(item, (depth || 0) + 1); });
+    var result = {};
+    ['returnValue','errorCode','errorText','completed','completionCode','httpCode','ticket',
+      'subscribed','appId','windowId','windowType','processId','foregroundAppInfo','acbs',
+      'pipelineId','playerType','playStateNow','playStateNext','playState','type','mediaId',
+      'isFullScreen','positionX','positionY','width','height','capturedWidth','capturedHeight',
+      'status','state','statusValue'].forEach(function (key) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) result[key] = project(value[key], (depth || 0) + 1);
+    });
+    return result;
+  }
+  function post(route, data, callback) {
+    var xhr = new XMLHttpRequest();
+    var done = false;
+    function settle(error) { if (done) return; done = true; if (callback) callback(error); }
+    xhr.open('POST', base + '/' + route, true);
+    xhr.timeout = 2000;
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('X-LG-Agent-Run-Id', config.runId);
+    xhr.onload = function () { settle(xhr.status >= 200 && xhr.status < 300 ? null : 'callback-http-' + xhr.status); };
+    xhr.onerror = function () { settle('callback-network'); };
+    xhr.ontimeout = function () { settle('callback-timeout'); };
+    try { xhr.send(JSON.stringify(data)); } catch (error) { settle(safeText(error.message)); }
+  }
+  function luna(label, uri, payload, complete, waitForUpload) {
+    if (stopped) return;
+    var bridge;
+    var done = false;
+    var started = Date.now();
+    var timer;
+    var last = null;
+    function settle(error, response) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (bridge && bridge.cancel) { try { bridge.cancel(); } catch (ignore) {} }
+      if (stopped) return;
+      var result = { elapsedMs: Date.now() - started };
+      if (error) result.error = safeText(error);
+      if (response) result.payload = project(response);
+      complete(result);
+    }
+    try {
+      bridge = new PalmServiceBridge();
+      bridges.push(bridge);
+      bridge.onservicecallback = function (raw) {
+        var response;
+        try { response = JSON.parse(raw); } catch (error) { settle('invalid-luna-json'); return; }
+        last = response;
+        if (waitForUpload && response.returnValue !== false && response.completed !== true &&
+            response.status !== 'completed' && response.state !== 'completed') return;
+        settle(null, response);
+      };
+      timer = setTimeout(function () { settle(label + '-timeout', last); }, Math.min(5000, Math.max(1, duration - (Date.now() - began))));
+      bridge.call(uri, JSON.stringify(payload));
+    } catch (error) { settle(label + ': ' + safeText(error.message)); }
+  }
+  function finish(reason) {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(nextTimer);
+    clearTimeout(stopTimer);
+    bridges.forEach(function (bridge) { if (bridge.cancel) { try { bridge.cancel(); } catch (ignore) {} } });
+    if (cancelCleanup) { cancelCleanup(); cancelCleanup = null; }
+    post('done', { type: 'done', runId: config.runId, mode: 'privileged-wam-bridge',
+      reason: reason, samples: sequence, elapsedMs: Date.now() - began, errors: failures });
+  }
+  function sample() {
+    if (stopped) return;
+    var sampleStart = Date.now();
+    var record = { type: 'sample', runId: config.runId, mode: 'privileged-wam-bridge',
+      sequence: ++sequence, elapsedMs: sampleStart - began };
+    luna('appForeground', 'luna://com.webos.applicationManager/getForegroundAppInfo', {}, function (app) {
+      record.appForeground = app;
+      luna('acbForeground', 'luna://com.webos.service.acb/getForegroundAppInfo', {}, function (acb) {
+        record.acbForeground = acb;
+        function deliver() {
+          if (stopped) return;
+          post('report', record, function (error) {
+            if (stopped) return;
+            if (error && failures.length < 20) failures.push(safeText(error));
+            if (sampleLimit !== null && sequence >= sampleLimit) { finish('sample-complete'); return; }
+            nextTimer = setTimeout(sample, Math.max(0, interval - (Date.now() - sampleStart)));
+          });
+        }
+        if (!screenshot) { record.capture = { skipped: true, reason: 'disabled' }; deliver(); return; }
+        function takeCapture(ticket) {
+          luna('capture', 'luna://com.webos.service.tv.capture/executeOneShot',
+          { path: capturePath, method: 'DISPLAY', width: 1920, height: 1080, format: 'JPEG' }, function (capture) {
+            record.capture = capture;
+            function cleanupAndDeliver() {
+              if (stopped) return;
+              if (ticket === null || !window.LGAgentCleanup) { deliver(); return; }
+              cancelCleanup = window.LGAgentCleanup.deleteCapture(config, ticket, function (result) {
+                cancelCleanup = null;
+                if (stopped) return;
+                record.cleanup = result;
+                deliver();
+              });
+            }
+            if (capture.error || !capture.payload || capture.payload.returnValue === false) { cleanupAndDeliver(); return; }
+            luna('upload', 'luna://com.webos.service.downloadmanager/upload',
+              { url: base + '/image?runId=' + config.runId + '&sample=' + sequence,
+                fileName: capturePath, fileLabel: 'capture', contentType: 'image/jpeg', subscribe: true }, function (upload) {
+                record.capture.upload = upload;
+                cleanupAndDeliver();
+              }, true);
+          });
+        }
+        if (window.LGAgentCleanup) {
+          cancelCleanup = window.LGAgentCleanup.prepareCapture(config, function (prepared) {
+            cancelCleanup = null;
+            if (stopped) return;
+            record.preparation = { ok: prepared.ok, seedVerified: prepared.seedVerified, error: prepared.error };
+            if (!prepared.ok) { record.capture = { skipped: true, reason: 'cleanup-ticket-unverified' }; deliver(); return; }
+            takeCapture(prepared.ticket);
+          });
+        } else takeCapture(null);
+      });
+    });
+  }
+  stopTimer = setTimeout(function () { finish('duration-complete'); }, duration);
+  post('report', { type: 'bridge-ready', runId: config.runId, mode: 'privileged-wam-bridge',
+    durationMs: duration, intervalMs: interval, sampleLimit: sampleLimit, screenshot: screenshot,
+    elapsedMs: Date.now() - began }, function (error) {
+      if (stopped) return;
+      if (error) { failures.push(safeText(error)); finish('ready-callback-failed'); return; }
+      nextTimer = setTimeout(sample, interval);
+    });
+}());
+</script></body></html>
