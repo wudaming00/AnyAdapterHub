@@ -23,6 +23,7 @@ function fixture() {
 test('OpenSSL failure diagnostics produce only static categories and never copy private material', () => {
   assert.equal(classifyIdentityProcessFailure('req: Unknown option -noenc'), 'HUB_IDENTITY_OPTION_UNSUPPORTED');
   assert.equal(classifyIdentityProcessFailure('Could not open config file NUL'), 'HUB_IDENTITY_CONFIG_FAILED');
+  assert.equal(classifyIdentityProcessFailure('Error on line 2 of config input'), 'HUB_IDENTITY_CONFIG_FAILED');
   for (const diagnostic of ['fixture-private-key-content', '-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----', 'X'.repeat(65537), null])
     assert.equal(classifyIdentityProcessFailure(diagnostic), 'HUB_IDENTITY_PROCESS_EXIT');
 });
