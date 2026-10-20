@@ -80,12 +80,14 @@ and the caller's current subset. Every argument object rejects unknown keys.
 | `display.set` | `on`: boolean |
 | `power.off`, `power.wake` | `{}`; wake uses owner configuration |
 | `text.insert` | `text`: 1–4096 characters; optional `replace`: boolean, default false |
+| `text.focus.read` | `{}`; immediate fresh event metadata, unknown focus does not authorize text input |
 | `url.open` | `url`: approved HTTP(S) URL |
 | `media.url.play`, `dlna.play` | `url`, `mimeType`; optional `title` up to 512 characters |
 | `dlna.control` | `action`: `play`, `pause`, `stop` |
 | `dlna.status` | `{}` |
 | `media.file.cast` | `filePath`: approved absolute local media file; optional matching `mimeType`, `title` |
 | `screen.observe` | Optional `screenshot`: boolean, default true; optional `timeoutMs`: integer 5000–25000, default 25000 |
+| `media.host.release` | `{}`; optional media feature; closes only this adapter instance's temporary listeners and does not stop/verify television playback |
 | `vacuum.start`, `vacuum.pause`, `vacuum.resume`, `vacuum.stop`, `vacuum.dock`, `vacuum.details.read` | `{}` |
 
 App/input/output/provider IDs use the reviewed opaque ID format, up to 128

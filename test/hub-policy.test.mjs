@@ -18,16 +18,16 @@ const EXAMPLES = {
   'app.launch': { id: 'com.disney.disneyplus-prod' }, 'app.content.launch': { id: 'com.disney.disneyplus-prod', content: '70GoJHflgHH9' },
   'navigation.key': { key: 'ENTER' }, 'pointer.move': { dx: -2, dy: 3 }, 'pointer.click': {}, 'pointer.scroll': { dx: 0, dy: -1 },
   'media.control': { action: 'pause' }, 'input.select': { id: 'HDMI_1' }, 'audio.output.set': { id: 'tv_speaker' },
-  'display.set': { on: true }, 'power.off': {}, 'power.wake': {}, 'text.insert': { text: 'private typed text' },
+  'display.set': { on: true }, 'power.off': {}, 'power.wake': {}, 'text.focus.read': {}, 'text.insert': { text: 'private typed text' },
   'url.open': { url: 'https://media.example/watch' }, 'media.url.play': { url: 'https://media.example/clip.mp4', mimeType: 'video/mp4' },
   'dlna.play': { url: 'http://192.168.1.9:8096/clip.mp4', mimeType: 'video/mp4', title: 'Local movie' },
-  'dlna.control': { action: 'stop' }, 'dlna.status': {}, 'media.file.cast': { filePath: path.join(ROOT, 'clip.mp4') },
+  'dlna.control': { action: 'stop' }, 'dlna.status': {}, 'media.host.release': {}, 'media.file.cast': { filePath: path.join(ROOT, 'clip.mp4') },
   'screen.observe': {},
   'vacuum.start': {}, 'vacuum.pause': {}, 'vacuum.resume': {}, 'vacuum.stop': {}, 'vacuum.dock': {}, 'vacuum.details.read': {},
 };
 
 test('registry contains only fixed reviewed actions and immutable strict JSON schemas', () => {
-  assert.equal(Object.keys(ACTIONS).length, 32);
+  assert.equal(Object.keys(ACTIONS).length, 34);
   assert.deepEqual(Object.keys(EXAMPLES).sort(), Object.keys(ACTIONS).sort());
   assert.deepEqual(READ_CAPABILITIES, ['state.read', 'events.read', 'screen.read']);
   for (const definition of Object.values(ACTIONS)) {

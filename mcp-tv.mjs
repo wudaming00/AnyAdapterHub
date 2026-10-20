@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { once } from 'node:events';
+import { createHash } from 'node:crypto';
+import { types } from 'node:util';
 import { validateMediaRoots } from './lib/media-host.mjs';
 import { resolveTVKey } from './lib/security/credentials.mjs';
 
@@ -14,6 +15,8 @@ export const PROTOCOL_VERSION = '2025-06-18';
 const VERSIONS = new Set([PROTOCOL_VERSION, '2025-03-26', '2024-11-05']);
 const DEFAULT_CONFIG = path.join(path.dirname(fileURLToPath(import.meta.url)), '.lg-tv.local.json');
 const MAX_MESSAGE_BYTES = 1024 * 1024;
+const MAX_IN_FLIGHT = 32;
+const KEYBOARD_WAIT = Symbol('keyboard-wait');
 const SECRET_FIELD = /^(?:clientkey|accesstoken|refreshtoken|token|password|passphrase|secret|authorization|cookie|setcookie|socketpath)$/i;
 const IDENTIFIER = { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$' };
 const BOOLEAN = { type: 'boolean' };
@@ -42,8 +45,9 @@ function tool(name, description, properties, required = [], { readOnly = false, 
 
 export const TV_TOOLS = [
   tool('tv_status', 'Read the TV state and current app. A running app does not prove a particular title is playing.', {}, [], { readOnly: true, idempotent: true }),
-  tool('tv_apps', 'List installed TV launch points and app IDs.', {}, [], { readOnly: true, idempotent: true }),
-  tool('tv_keyboard_state', 'Read whether a TV text field has focus; no keyboard input is sent.', {}, [], { readOnly: true, idempotent: true }),
+  tool('tv_apps', 'List at most 256 installed app IDs and titles; icons, URLs and vendor metadata are omitted.', {}, [], { readOnly: true, idempotent: true }),
+  tool('tv_keyboard_state', 'Observe fresh boolean text focus without sending input. The default returns immediately; an explicit wait does not block later navigation. Subscription acknowledgement is not focus evidence.',
+    { waitMs: { type: 'integer', minimum: 0, maximum: 30000 } }, [], { readOnly: true, idempotent: true }),
   tool('tv_screenshot', 'Capture the current TV display as an image. This may fail or omit protected video; a screenshot alone does not prove playback.', {}, [], { readOnly: true, idempotent: true }),
   tool('tv_observe', 'Temporarily open transparent TV diagnostics to read internal foreground and player state and capture the screen, then close the overlay and verify the original app. Requires compatible webOS. Player activity can be a homepage preview and does not verify a title.', {}),
   tool('tv_launch', 'Launch an installed ordinary TV app and verify its foreground ID. Agent-supplied launch params must be empty; HTTP(S) content IDs require a locally allowedUrlOrigins origin. Foreground confirmation does not verify content playback.',
@@ -62,6 +66,7 @@ export const TV_TOOLS = [
     { action: { type: 'string', enum: ['play', 'pause', 'stop'] } }, ['action'], { idempotent: true }),
   tool('tv_cast_file', 'Cast one selected local audio/video file within explicitly configured mediaRoots to the TV for native DLNA decoding. A supported media extension is required and any MIME type must match it. The temporary file listener permits only this TV and stays available until replacement, confirmed DLNA stop or server exit. Network shares and streaming-provider pages are unsupported.',
     { filePath: { type: 'string', minLength: 1, maxLength: 32768 }, mimeType: MIME_TYPE, title: { type: 'string', maxLength: 512 } }, ['filePath']),
+  tool('tv_release_media', 'Close only temporary media listeners owned by this MCP process, without contacting the TV. This does not stop TV playback or release another process\'s media listener.', {}, [], { idempotent: true }),
   tool('tv_type_text', 'Type text into the focused TV input. replace=true replaces the current field. Text is not echoed in results.',
     { text: { type: 'string', minLength: 1, maxLength: 4096 }, replace: BOOLEAN }, ['text']),
   tool('tv_key', 'Send one named remote key to the TV.', { key: { type: 'string', enum: KEYS } }, ['key']),
@@ -228,9 +233,50 @@ function stateValue(snapshot, kind) {
   return candidates.find(value => kind === 'volume' ? Number.isFinite(value) : typeof value === 'boolean');
 }
 
+// The canonical copy is RAM-only and rejects executable configuration values.
+// Each request still reloads/decrypts its local configuration; no key cache is added.
+function configCopy(value, depth = 0) {
+  if (depth > 12) throw new Error('Invalid local TV configuration.');
+  if (value === null || value === undefined || typeof value === 'boolean') return value;
+  if (typeof value === 'string' && value.length <= 131072) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (!value || typeof value !== 'object' || types.isProxy(value) || Object.getOwnPropertySymbols(value).length ||
+    ![Object.prototype, Array.prototype].includes(Object.getPrototypeOf(value))) throw new Error('Invalid local TV configuration.');
+  const fields = Object.getOwnPropertyDescriptors(value), keys = Object.keys(fields).filter(key => key !== 'length' || !Array.isArray(value));
+  if (keys.length > 512 || keys.some(key => !Object.hasOwn(fields[key], 'value') || !fields[key].enumerable)) throw new Error('Invalid local TV configuration.');
+  if (Array.isArray(value)) {
+    if (value.length > 512 || keys.some((key, i) => key !== String(i))) throw new Error('Invalid local TV configuration.');
+    return Object.freeze(keys.map(key => configCopy(fields[key].value, depth + 1)));
+  }
+  return Object.freeze(Object.fromEntries(keys.sort().map(key => [key, configCopy(fields[key].value, depth + 1)])));
+}
+function configFingerprint(config) { return createHash('sha256').update(JSON.stringify(config)).digest('hex'); }
+export function compactApps(payload) {
+  const data = (object, key) => object && typeof object === 'object' && !types.isProxy(object) ? Object.getOwnPropertyDescriptor(object, key)?.value : undefined;
+  const points = data(payload, 'launchPoints'), listed = data(payload, 'apps');
+  const items = Array.isArray(points) && !types.isProxy(points) ? points : Array.isArray(listed) && !types.isProxy(listed) ? listed : [];
+  const apps = [], seen = new Set();
+  for (let i = 0; i < Math.min(items.length, 2000); i++) {
+    const item = data(items, String(i)), id = data(item, 'id'), title = data(item, 'title');
+    if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) || seen.has(id)) continue;
+    seen.add(id); if (apps.length >= 256) break;
+    apps.push({ id, ...(typeof title === 'string' ? { title: title.slice(0, 256) } : {}) });
+  }
+  return { apps, truncated: seen.size > 256 || items.length > 2000 };
+}
+
 export class TVMcpServer {
+  #session;
+  #configFingerprint;
+  #requiresCleanup = false;
+  #ownedControllers = new Set();
+  #ownedMediaHosts = new Set();
+  #closingResources = new Map();
+  #focusWaits = new Set();
   constructor({ loadConfig = loadPrivateConfig, controllerFactory = defaultFactory, wake = defaultWake,
-    mediaHostFactory = defaultMediaHostFactory, observer = defaultObserver } = {}) {
+    mediaHostFactory = defaultMediaHostFactory, observer = defaultObserver, cleanupTimeoutMs = 1500 } = {}) {
+    if (!Number.isInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 5000) throw new Error('Invalid cleanup timeout.');
+    this.cleanupTimeoutMs = cleanupTimeoutMs;
     this.loadConfig = loadConfig;
     this.controllerFactory = controllerFactory;
     this.wake = wake;
@@ -243,27 +289,104 @@ export class TVMcpServer {
     this.callQueue = Promise.resolve();
   }
 
-  // Each complete command plus its verification finishes before another tool runs.
-  // Config is still reloaded for each call so an explicitly replaced saved key is used.
+  // Effects and their verification remain serialized. Only a boolean focus wait
+  // is detached after its session is prepared, so navigation can make it progress.
   callTool(name, args) {
     if (this.closed) throw new RpcError(-32000, 'MCP server is closing');
-    const result = this.callQueue.then(() => this.executeTool(name, args));
+    const started = performance.now(), timings = {};
+    const result = this.callQueue.then(() => { timings.queueWaitMs = performance.now() - started; return this.executeTool(name, args, timings); });
     this.callQueue = result.catch(() => {});
-    return result;
+    return result.then(value => value?.[KEYBOARD_WAIT] ?? value).then(value => ({ ...value,
+      _meta: { timings: { ...timings, totalMs: performance.now() - started } } }));
+  }
+
+  async closeResource(resource, owned) {
+    let pending = this.#closingResources.get(resource);
+    if (!pending) {
+      pending = Promise.resolve().then(() => resource.close());
+      this.#closingResources.set(resource, pending);
+      pending.then(() => {
+        owned.delete(resource); this.#closingResources.delete(resource);
+        if (this.mediaHost === resource) this.mediaHost = undefined;
+      }, () => { this.#closingResources.delete(resource); });
+    }
+    let timer;
+    try { return await Promise.race([pending.then(() => true, () => false), new Promise(resolve => { timer = setTimeout(() => resolve(false), this.cleanupTimeoutMs); })]); }
+    finally { clearTimeout(timer); }
   }
 
   async releaseMediaHost() {
-    const host = this.mediaHost;
-    this.mediaHost = undefined;
-    if (host) await host.close();
+    const hosts = [...this.#ownedMediaHosts];
+    await Promise.all(hosts.map(host => this.closeResource(host, this.#ownedMediaHosts)));
+    return { localMediaReleased: this.#ownedMediaHosts.size === 0, ownedMediaHostsRemaining: this.#ownedMediaHosts.size,
+      tvPlaybackStopped: false, verificationScope: 'local_media_host_only' };
+  }
+
+  async invalidateSession({ releaseMedia = false } = {}) {
+    if (releaseMedia) this.#requiresCleanup = true;
+    this.#session = undefined;
+    for (const waiter of this.#focusWaits) waiter.abort();
+    const closed = await Promise.all([...this.#ownedControllers].map(controller => this.closeResource(controller, this.#ownedControllers)));
+    const media = releaseMedia ? await this.releaseMediaHost() : undefined;
+    if (closed.some(value => !value) || media?.localMediaReleased === false) throw new Error('Previous local TV resources could not be closed.');
+    if (releaseMedia) this.#requiresCleanup = false;
+  }
+
+  async currentConfig() {
+    const started = performance.now();
+    let config;
+    try { config = configCopy(await this.loadConfig()); if (!privateHost(config.host)) throw new Error('A private LAN IPv4 TV address is required.'); }
+    catch { this.#configFingerprint = undefined; await this.invalidateSession({ releaseMedia: true }); throw new Error('Unable to validate the current local TV configuration.'); }
+    const configLoadMs = performance.now() - started;
+    const fingerprint = configFingerprint(config);
+    if (this.#requiresCleanup || (this.#configFingerprint !== undefined && this.#configFingerprint !== fingerprint)) await this.invalidateSession({ releaseMedia: true });
+    if (this.#ownedControllers.size && !this.#session) await this.invalidateSession({ releaseMedia: true });
+    this.#configFingerprint = fingerprint;
+    return { config, fingerprint, configLoadMs };
+  }
+
+  async sessionController(config, fingerprint, needsSSAP) {
+    if (needsSSAP && this.#session?.connected && this.#session.controller.registered === false) await this.invalidateSession();
+    if (!this.#session) {
+      const controller = await this.controllerFactory(config);
+      this.#ownedControllers.add(controller); this.#session = { controller, fingerprint };
+    }
+    const controller = this.#session.controller;
+    if (needsSSAP) { await controller.connect({ allowPairing: false }); this.#session.connected = true; }
+    return controller;
   }
 
   close() {
     if (!this.closePromise) {
       this.closed = true;
-      this.closePromise = this.callQueue.then(() => this.releaseMediaHost());
+      for (const waiter of this.#focusWaits) waiter.abort();
+      this.closePromise = this.callQueue.then(() => this.invalidateSession({ releaseMedia: true }));
     }
     return this.closePromise;
+  }
+
+  endInput() {
+    this.inputEnded = true;
+    for (const waiter of this.#focusWaits) waiter.abort();
+  }
+
+  async finishKeyboard(wait, controller, fingerprint, cancel, timings) {
+    try {
+      await wait;
+      const checked = this.callQueue.then(async () => {
+        if (this.closed) throw new Error('MCP server is closing.');
+        const current = await this.currentConfig();
+        timings.configRecheckMs = current.configLoadMs;
+        if (current.fingerprint !== fingerprint || this.#session?.controller !== controller) throw new Error('TV configuration changed while observing focus.');
+        // The controller owns focus generation and age; a later navigation cannot
+        // turn an old event into fresh evidence while this result waits in queue.
+        return controller.observeKeyboard({ waitMs: 0 });
+      });
+      this.callQueue = checked.catch(() => {});
+      return { content: [{ type: 'text', text: JSON.stringify({ result: await checked }) }], isError: false };
+    } catch (error) {
+      return { content: [{ type: 'text', text: error?.code === 'ABORT_ERR' || this.closed ? 'Focus observation cancelled.' : 'Fresh TV focus could not be verified.' }], isError: true };
+    } finally { this.#focusWaits.delete(cancel); }
   }
 
   async confirmForeground(controller, request, expectedAppId, contentRequested = false) {
@@ -305,7 +428,8 @@ export class TVMcpServer {
     return result;
   }
 
-  async executeTool(name, args) {
+  async executeTool(name, args, timings = {}) {
+    if (this.closed) throw new RpcError(-32000, 'MCP server is closing');
     const definition = TOOL_MAP.get(name);
     if (!definition) invalid('Unknown TV tool');
     validate(definition.inputSchema, args, 'arguments');
@@ -332,8 +456,16 @@ export class TVMcpServer {
     let candidateHost;
     let hostedMedia;
     try {
-      config = await this.loadConfig();
-      if (!privateHost(config.host)) throw new Error('A private LAN IPv4 TV address is required.');
+      // Releasing our own listener remains available even when saved configuration
+      // is absent or revoked; cleanup never reconnects to a TV or sends Stop.
+      if (name === 'tv_release_media') {
+        try { const current = await this.currentConfig(); timings.configLoadMs = current.configLoadMs; } catch {}
+        const result = await this.releaseMediaHost();
+        return { content: [{ type: 'text', text: JSON.stringify({ result }) }], isError: !result.localMediaReleased };
+      }
+      const current = await this.currentConfig(); config = current.config; timings.configLoadMs = current.configLoadMs;
+      const assertOpen = () => { if (this.closed) throw Object.assign(new Error('MCP server is closing.'), { code: 'CLIENT_CLOSED' }); };
+      assertOpen();
       if (name === 'tv_observe' && config.allowTemporaryObserver !== true) {
         throw new Error('Temporary privileged TV observation requires an explicit local allowTemporaryObserver=true setting.');
       }
@@ -355,17 +487,35 @@ export class TVMcpServer {
       if (name === 'tv_power' && args.action === 'wake') {
         if (typeof config.mac !== 'string' || !/^(?:[\da-f]{2}[:-]?){5}[\da-f]{2}$/i.test(config.mac)) throw new Error('Wake-on-LAN requires an explicitly saved TV MAC address.');
         const options = config.wake ?? {};
-        result = await this.wake(config.mac, { broadcast: options.broadcast, bindAddress: options.bindAddress, port: options.port ?? 9 });
+        result = await this.wake(config.mac, { broadcast: options.broadcast, bindAddress: options.bindAddress, port: options.port ?? 9, assertDispatch: assertOpen });
       } else {
         if (!DLNA_TOOLS.has(name) && (typeof config.clientKey !== 'string' || !config.clientKey)) throw new Error('No saved pairing key for this TV. Pair explicitly using the TV CLI first; MCP never starts pairing.');
-        controller = await this.controllerFactory(config);
-        if (!DLNA_TOOLS.has(name)) await controller.connect({ allowPairing: false });
+        const connecting = performance.now();
+        controller = await this.sessionController(config, current.fingerprint, !DLNA_TOOLS.has(name));
+        timings.controllerReadyMs = performance.now() - connecting;
+        const assertSession = () => {
+          assertOpen();
+          if (this.#session?.controller !== controller || this.#session.fingerprint !== current.fingerprint) throw Object.assign(new Error('TV session changed before dispatch.'), { code: 'CLIENT_CLOSED' });
+        };
+        assertSession();
+        const dispatch = async () => {
         switch (name) {
           case 'tv_status': result = await controller.status(); break;
-          case 'tv_apps': result = await controller.apps(); break;
-          case 'tv_keyboard_state': result = await controller.keyboardState(); break;
+          case 'tv_apps': result = compactApps(await controller.apps()); break;
+          case 'tv_keyboard_state': {
+            if (!(args.waitMs > 0)) { result = await controller.observeKeyboard({ waitMs: 0 }); break; }
+            if (this.inputEnded || this.#focusWaits.size >= 8) throw new Error('Focus observation is unavailable while closing or at its concurrency bound.');
+            const cancel = new AbortController(); this.#focusWaits.add(cancel);
+            const wait = controller.observeKeyboard({ waitMs: args.waitMs, signal: cancel.signal });
+            return { [KEYBOARD_WAIT]: this.finishKeyboard(wait, controller, current.fingerprint, cancel, timings) };
+          }
           case 'tv_screenshot': result = await controller.screenshot(); break;
-          case 'tv_observe': result = await this.observer(controller, { timeoutMs: 25000 }); break;
+          case 'tv_observe': {
+            controller.invalidateKeyboardFocus?.();
+            try { result = await this.observer(controller, { timeoutMs: 25000 }); }
+            finally { controller.invalidateKeyboardFocus?.(); }
+            break;
+          }
           case 'tv_launch': {
             const request = await controller.launch(args.id, args.params ?? {}, args.contentId);
             result = await this.confirmForeground(controller, request, args.id, args.contentId !== undefined);
@@ -395,14 +545,18 @@ export class TVMcpServer {
             result = await controller.dlnaMedia(args.action);
             checkedPostcondition = true;
             if (args.action === 'stop' && result?.confirmed === true && ['STOPPED', 'NO_MEDIA_PRESENT'].includes(result.transportState)) {
-              try { await this.releaseMediaHost(); }
-              catch { result = { ...result, cleanupWarning: 'The previous local media listener could not be closed.' }; }
+              const cleanup = await this.releaseMediaHost();
+              if (!cleanup.localMediaReleased) result = { ...result, cleanupWarning: 'The previous local media listener could not be closed.' };
             }
             break;
           }
           case 'tv_cast_file': {
+            if (this.#ownedMediaHosts.size >= 2) throw new Error('Release outstanding local media listeners before casting another file.');
             candidateHost = await this.mediaHostFactory({ tvHost: config.host, bindAddress: config.wake?.bindAddress, mediaRoots: config.mediaRoots });
+            this.#ownedMediaHosts.add(candidateHost);
+            assertSession();
             hostedMedia = await candidateHost.serve(args.filePath, { mimeType: args.mimeType });
+            assertSession();
             result = await controller.dlnaPlay(hostedMedia.url, { mimeType: hostedMedia.mimeType, title: args.title });
             result = { ...result, bytes: hostedMedia.bytes, mimeType: hostedMedia.mimeType };
             checkedPostcondition = true;
@@ -411,8 +565,7 @@ export class TVMcpServer {
               this.mediaHost = candidateHost;
               candidateHost = undefined;
               if (previousHost) {
-                try { await previousHost.close(); }
-                catch { result.cleanupWarning = 'The previous local media listener could not be closed.'; }
+                if (!await this.closeResource(previousHost, this.#ownedMediaHosts)) result.cleanupWarning = 'The previous local media listener could not be closed.';
               }
             }
             break;
@@ -455,6 +608,9 @@ export class TVMcpServer {
           case 'tv_screen': result = await controller.screen(args.on); break;
           case 'tv_power': result = await controller.powerOff(); break;
         }
+        };
+        const prepared = await (typeof controller.withDispatchGuard === 'function' ? controller.withDispatchGuard(assertSession, dispatch) : dispatch());
+        if (prepared?.[KEYBOARD_WAIT]) return prepared;
       }
       if (name === 'tv_screenshot') {
         const mimeType = typeof result?.contentType === 'string' ? result.contentType.split(';')[0].trim().toLowerCase() : '';
@@ -482,22 +638,34 @@ export class TVMcpServer {
       if (!definition.annotations.readOnlyHint && !checkedPostcondition) {
         result = { ...acceptedRequest(result), ...(name === 'tv_play_url' ? { playbackVerified: false } : {}) };
       }
+      if (candidateHost) {
+        if (!await this.closeResource(candidateHost, this.#ownedMediaHosts)) result = { ...result, cleanupWarning: 'The candidate local media listener could not be closed.' };
+        candidateHost = undefined;
+      }
       const safe = redactOutput(result, [config.clientKey, args.text, args.filePath, hostedMedia?.url]);
       const isError = checkedPostcondition ? result.confirmed !== true : result?.requestAccepted === false;
       return { content: [{ type: 'text', text: JSON.stringify({ result: safe }) }], isError };
     } catch (error) {
+      // The possibly dispatched operation is never replayed. A later explicit
+      // request can establish a new session after this one has been closed.
+      if (controller || this.#session) { try { await this.invalidateSession(); } catch {} }
+      let candidateCleanupFailed = false;
+      if (candidateHost) {
+        candidateCleanupFailed = !await this.closeResource(candidateHost, this.#ownedMediaHosts);
+        candidateHost = undefined;
+      }
       if (DLNA_TOOLS.has(name)) {
         const result = { ...(name === 'tv_dlna_status' ? {} : { requestAccepted: null, confirmed: false, playbackVerified: false }),
           ...(object(error.payload) ? error.payload : {}),
           ...(hostedMedia ? { bytes: hostedMedia.bytes, mimeType: hostedMedia.mimeType } : {}),
+          ...(candidateCleanupFailed ? { cleanupWarning: 'The candidate local media listener could not be closed.' } : {}),
           error: { code: error.code ?? 'DLNA_FAILED', message: error.message ?? 'DLNA operation failed.',
             ...(error.upnpError !== undefined ? { upnpError: error.upnpError } : {}) } };
         return { content: [{ type: 'text', text: JSON.stringify({ result: redactOutput(result, [config?.clientKey, args.filePath, hostedMedia?.url]) }) }], isError: true };
       }
       return { content: [{ type: 'text', text: scrubText(error.message ?? 'TV operation failed.', [config?.clientKey, args.text]).slice(0, 800) }], isError: true };
     } finally {
-      if (candidateHost) { try { await candidateHost.close(); } catch {} }
-      if (controller) { try { await controller.close(); } catch {} }
+      if (candidateHost) await this.closeResource(candidateHost, this.#ownedMediaHosts);
     }
   }
 
@@ -548,11 +716,34 @@ export class TVMcpServer {
   }
 }
 
-export async function runStdio({ input = process.stdin, output = process.stdout, server = new TVMcpServer() } = {}) {
+export async function runStdio({ input = process.stdin, output = process.stdout, server = new TVMcpServer(), outputTimeoutMs = 1500 } = {}) {
+  if (!Number.isInteger(outputTimeoutMs) || outputTimeoutMs < 1 || outputTimeoutMs > 5000) throw new Error('Invalid output timeout.');
   input.setEncoding('utf8');
-  let pending = '';
-  const send = async message => {
-    if (message && !output.write(`${JSON.stringify(message)}\n`)) await once(output, 'drain');
+  let pending = '', sendQueue = Promise.resolve(), outputFailed = false; const inFlight = new Set();
+  const failedOutput = () => {
+    if (outputFailed) return; outputFailed = true;
+    server.endInput?.(); input.destroy?.();
+    // Stop accepting queued effects immediately; cleanup is awaited again below.
+    Promise.resolve(server.close()).catch(() => {});
+  };
+  output.on('error', failedOutput); output.on('close', failedOutput);
+  const send = message => {
+    sendQueue = sendQueue.then(() => {
+      if (!message) return;
+      if (outputFailed) throw new Error('MCP output transport failed.');
+      return new Promise((resolve, reject) => {
+        let done = false;
+        const finish = failed => {
+          if (done) return; done = true; clearTimeout(timer); output.off('error', broken); output.off('close', broken);
+          if (failed) { failedOutput(); reject(new Error('MCP output transport failed.')); } else resolve();
+        };
+        const broken = () => finish(true), timer = setTimeout(broken, outputTimeoutMs);
+        output.once('error', broken); output.once('close', broken);
+        try { output.write(`${JSON.stringify(message)}\n`, error => finish(Boolean(error))); }
+        catch { finish(true); }
+      });
+    });
+    return sendQueue;
   };
   const line = async value => {
     if (!value.trim()) return;
@@ -560,6 +751,13 @@ export async function runStdio({ input = process.stdin, output = process.stdout,
     try { message = JSON.parse(value); }
     catch { await send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Invalid JSON' } }); return; }
     await send(await server.handle(message));
+  };
+  const dispatch = async value => {
+    // Bounded input backpressure is separate from the effect queue. A focus wait
+    // no longer prevents later navigation messages from being read and queued.
+    if (inFlight.size >= MAX_IN_FLIGHT) await Promise.race(inFlight);
+    const running = line(value); inFlight.add(running);
+    running.then(() => inFlight.delete(running), () => inFlight.delete(running));
   };
   try {
     for await (const chunk of input) {
@@ -569,15 +767,21 @@ export async function runStdio({ input = process.stdin, output = process.stdout,
         const value = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
         if (Buffer.byteLength(value) > MAX_MESSAGE_BYTES) throw new Error('MCP input message exceeded the size limit.');
-        await line(value);
+        await dispatch(value);
       }
       if (Buffer.byteLength(pending) > MAX_MESSAGE_BYTES) throw new Error('MCP input message exceeded the size limit.');
     }
     // A closing stdin can deliver its final message without a trailing newline.
-    if (pending.trim()) await line(pending);
+    if (pending.trim()) await dispatch(pending);
   } finally {
-    await server.close();
+    server.endInput?.();
+    try { await Promise.allSettled([...inFlight]); await sendQueue; }
+    finally {
+      try { await server.close(); }
+      finally { output.off('error', failedOutput); output.off('close', failedOutput); }
+    }
   }
+  if (outputFailed) throw new Error('MCP output transport failed.');
 }
 
 export async function main(argv = process.argv.slice(2)) {

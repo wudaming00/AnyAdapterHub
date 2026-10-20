@@ -69,8 +69,8 @@ function fixture(options = {}) {
 test('basic-only LG enrollment rejects enhancement calls before authorization, connection or effects', async t => {
   const f = fixture({ features: [] }); t.after(() => f.adapter.close());
   assert.deepEqual(f.adapter.features, []);
-  assert.deepEqual(f.adapter.readonlyActions, ['app.list']);
-  for (const action of ['screen.observe', 'media.url.play', 'dlna.play', 'dlna.control', 'dlna.status', 'media.file.cast']) {
+  assert.deepEqual(f.adapter.readonlyActions, ['app.list', 'text.focus.read']);
+  for (const action of ['screen.observe', 'media.url.play', 'dlna.play', 'dlna.control', 'dlna.status', 'media.file.cast', 'media.host.release']) {
     assert.equal(f.adapter.supportedActions.includes(action), false);
   }
   let dispatchChecks = 0;

@@ -29,6 +29,11 @@ class FakeSSAP {
     return { currentWidget: { focus: true } };
   }
   async subscribe(uri, payload, options) {
+    if (uri.endsWith('/getForegroundAppInfo')) {
+      this.foregroundSubscription = { uri, payload, options };
+      options.onUpdate({ appId: 'com.example.app' });
+      return { id: 'foreground-fixture', unsubscribe() {} };
+    }
     this.subscription = { uri, payload, options };
     this.subscriptionCount = (this.subscriptionCount ?? 0) + 1;
     options.onUpdate({ subscribed: true });
@@ -61,6 +66,7 @@ test('ordinary controller methods map to documented endpoints and exact payloads
   await controller.apps();
   await controller.launch('com.example.app', { language: 'zh' }, 'episode:123');
   await controller.openUrl('https://example.com/watch?id=123');
+  await controller.startKeyboard();
   await controller.typeText('中文 query', { replace: true });
   await controller.media('pause');
   await controller.setVolume(25);
@@ -266,6 +272,7 @@ test('internal observer launch fixes the app, token path and private computer or
 
 test('keyboard state waits for actual focus payload; typing retains one IME subscription until close', async () => {
   const { controller, ssap } = harness();
+  await controller.connect();
   ssap.autoFocus = false;
   const pending = controller.keyboardState({ timeoutMs: 50 });
   await new Promise((resolve) => setImmediate(resolve));
@@ -273,9 +280,10 @@ test('keyboard state waits for actual focus payload; typing retains one IME subs
   const result = await pending;
   assert.equal(result.currentWidget.focus, true);
   assert.equal(ssap.subscription.uri, 'ssap://com.webos.service.ime/registerRemoteKeyboard');
-  await controller.typeText('first'); await controller.typeText('second'); await controller.sendEnter();
+  await controller.typeText('first'); await controller.typeText('second');
   assert.equal(ssap.subscriptionCount, 1);
   assert.equal(ssap.unsubscribed, undefined);
+  await controller.sendEnter();
   assert.equal(ssap.calls.at(-1).uri, 'ssap://com.webos.service.ime/sendEnterKey');
   controller.close();
   assert.equal(ssap.unsubscribed, true);
@@ -284,9 +292,11 @@ test('keyboard state waits for actual focus payload; typing retains one IME subs
 test('typeText never inserts on bare subscription acknowledgement or focus:false', async () => {
   for (const focusPayload of [undefined, { currentWidget: { focus: false, value: 'private-widget-value' } }]) {
     const { controller, ssap } = harness();
+    await controller.connect();
     ssap.autoFocus = false;
+    await controller.startKeyboard();
     const textValue = 'private-text-never-echo';
-    const rejected = assert.rejects(controller.typeText(textValue, { timeoutMs: 15 }), (error) => error.code === 'IME_FOCUS_TIMEOUT' &&
+    const rejected = assert.rejects(controller.typeText(textValue, { timeoutMs: 15 }), (error) => error.code === 'IME_FOCUS_UNVERIFIED' &&
       !error.message.includes(textValue) && !JSON.stringify(error).includes('private-widget-value'));
     await new Promise((resolve) => setImmediate(resolve));
     if (focusPayload) ssap.subscription.options.onUpdate(focusPayload);
@@ -296,16 +306,17 @@ test('typeText never inserts on bare subscription acknowledgement or focus:false
   }
 });
 
-test('typeText waits through focus:false until focus:true and never returns input contents', async () => {
+test('typeText fails fast on focus:false and a later explicit insertion never returns input contents', async () => {
   const privateText = 'sensitive-text-value';
   const { controller, ssap } = harness(() => ({ returnValue: true, text: privateText, currentWidget: { value: privateText } }));
+  await controller.connect();
   ssap.autoFocus = false;
-  const pending = controller.typeText(privateText, { replace: true, timeoutMs: 100 });
-  await new Promise((resolve) => setImmediate(resolve));
+  await controller.startKeyboard();
   ssap.subscription.options.onUpdate({ currentWidget: { focus: false } });
+  await assert.rejects(controller.typeText(privateText), { code: 'IME_FOCUS_UNVERIFIED' });
   assert.equal(ssap.calls.length, 0);
   ssap.subscription.options.onUpdate({ currentWidget: { focus: true, value: privateText, text: privateText } });
-  const result = await pending;
+  const result = await controller.typeText(privateText, { replace: true });
   assert.deepEqual(result, { returnValue: true, focusConfirmed: true, insertionConfirmed: false });
   assert.equal(ssap.calls.filter((call) => call.uri.endsWith('/insertText')).length, 1);
   const state = await controller.keyboardState();
@@ -316,10 +327,11 @@ test('typeText waits through focus:false until focus:true and never returns inpu
 
 test('focus loss before queued insertion blocks text; explicit sendEnter remains independent', async () => {
   const { controller, ssap } = harness();
+  await controller.connect();
   ssap.autoFocus = false;
-  const pending = controller.typeText('must-not-send', { timeoutMs: 100 });
-  await new Promise((resolve) => setImmediate(resolve));
+  await controller.startKeyboard();
   ssap.subscription.options.onUpdate({ currentWidget: { focus: true } });
+  const pending = controller.typeText('must-not-send', { timeoutMs: 100 });
   ssap.subscription.options.onUpdate({ currentWidget: { focus: false } });
   await assert.rejects(pending, { code: 'IME_NOT_FOCUSED' });
   assert.equal(ssap.calls.length, 0);
