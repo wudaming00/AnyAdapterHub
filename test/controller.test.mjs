@@ -374,6 +374,26 @@ test('pointer connection timeout terminates socket and never sends input', async
   controller.close();
 });
 
+test('half-open pointer send is discarded without replay while SSAP remains registered', async () => {
+  const sockets = []; let late;
+  const { controller, ssap } = harness(() => ({ socketPath: `wss://${HOST}:3001/pointer` }), { timeoutMs: 5,
+    pointerWebSocketFactory: () => {
+      const socket = new FakePointer(); sockets.push(socket);
+      if (sockets.length === 1) socket.send = (frame, callback) => { socket.frames.push(frame); late = callback; };
+      return socket;
+    } });
+  await controller.connect();
+  await assert.rejects(controller.key('DOWN'), { code: 'TIMEOUT' });
+  assert.equal(sockets[0].readyState, 3);
+  assert.equal(ssap.registered, true);
+  await controller.key('UP'); late();
+  assert.deepEqual(sockets[0].frames, ['type:button\nname:DOWN\n\n']);
+  assert.deepEqual(sockets[1].frames, ['type:button\nname:UP\n\n']);
+  await controller.key('LEFT');
+  assert.equal(sockets.length, 2);
+  controller.close();
+});
+
 test('Wake-on-LAN builds a proper magic packet and rejects invalid/multicast MACs', () => {
   const packet = createMagicPacket('44:66:88:AA:CC:EE');
   assert.equal(packet.length, 102);

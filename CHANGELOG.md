@@ -9,6 +9,8 @@ This file records source changes. There is no published npm package or tagged re
 - Independent loopback HTTPS API and JavaScript SDK, authenticated SSE, per-device state freshness and operation records.
 - Exact device/capability grants with expiry, revocation, owner-only management and a dispatch-time permission/deadline check.
 - Persistent idempotency and conservative restart recovery: queued work is cancelled, interrupted running work becomes unknown, and ambiguous device writes are not automatically replayed.
+- Read-only exact-client/device operation lookup by original idempotency key for lost-response recovery.
+- Checkpointed Disney+ visual-agent workflow, scoped frame-bound decisions, encrypted viewing progress and bounded local CLI coordination.
 - Empty-core startup without an enrolled device or vendor dependency.
 
 ### Adapters and optional features
@@ -26,6 +28,7 @@ This file records source changes. There is no published npm package or tagged re
 - Explicit rerunnable security migration, offline-TV pending enrollment and stop-before-migration checks.
 - Native/MSYS Git for Windows OpenSSL compatibility using fixed non-secret stdin configuration and RAM-only private-key output.
 - Bounded process diagnostics, cold DPAPI startup and SSE/TLS resource limits.
+- Explicit saved LG source-interface binding, one bounded read reconnect and pointer-only timeout recovery without mutation replay.
 - Shared secret-envelope validation separated from Windows DPAPI, private file permissions and fixed system-tool resolution; frozen platform metadata does not enable unimplemented providers.
 
 ### Documentation and checks
@@ -37,6 +40,6 @@ This file records source changes. There is no published npm package or tagged re
 
 ### Known limits
 
-Live secret storage is Windows-only. Same-user/admin compromise is outside API grant isolation; reviewed adapters are trusted code, not OS-sandboxed plugins. LG initial trust and factory-shared certificates do not prove one unique TV. Legacy observer/DLNA/media LAN legs remain unencrypted and optional. The new LG pinned transport still awaits live enrollment/retesting on the documented B8. The ECOVACS enrollment wizard, other device adapters and Linux/macOS production secret providers are not implemented.
+Live secret storage is Windows-only. Same-user/admin compromise is outside API grant isolation; reviewed adapters are trusted code, not OS-sandboxed plugins. LG initial trust and factory-shared certificates do not prove one unique TV. Legacy observer/DLNA/media LAN legs remain unencrypted and optional. Selected pinned control and visual workflow were retested on the documented B8; other devices/actions remain unverified. The ECOVACS enrollment wizard, other device adapters and Linux/macOS production secret providers are not implemented.
 
 See the [support matrix](docs/SUPPORTED_DEVICES.md), [security policy](SECURITY.md) and [roadmap](docs/ROADMAP.md) for the current boundaries.

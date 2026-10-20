@@ -72,9 +72,11 @@ Initial pin enrollment trusts the first observation on the selected local
 network (TOFU), so it cannot defeat an attacker already present at that moment.
 Also, the [lgtv2 maintainers report shared LG certificates and private keys across
 2018–2025 models](https://github.com/hobbyquaker/lgtv2#api). A matching factory
-certificate therefore does not prove a unique household television. This specific
-B8's certificate has not yet been retrieved under the new transport. Keep the
-TV on an owner-controlled network; pinning alone is not a hostile-LAN guarantee.
+certificate therefore does not prove a unique household television. This B8's
+certificate was enrolled and selected pinned controls were
+[retested](evidence/lg-b8-workflow-2026-10-19.md); initial observation did not
+independently authenticate the physical device. Keep the TV on an owner-controlled
+network; pinning alone is not a hostile-LAN guarantee.
 
 Migration overwrites current configuration files. It does not erase historical
 backups, crash dumps, previous exports, filesystem snapshots or SSD remnants.
