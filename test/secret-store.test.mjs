@@ -5,6 +5,11 @@ import childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { syncBuiltinESMExports } from 'node:module';
 import { createSecretStore, sealSecret, openSecret, isSecretEnvelope, isSecretStoreSupported, isSupportedSecretProvider, SecretStoreError } from '../lib/security/secret-store.mjs';
+import { SecretStoreError as SharedSecretStoreError } from '../lib/security/secret-errors.mjs';
+
+test('the public error export retains the platform provider error identity', () => {
+  assert.equal(SecretStoreError, SharedSecretStoreError);
+});
 
 function fixture() {
   const key = randomBytes(32); const captured = [];
@@ -121,6 +126,40 @@ test('Windows operation deadline reports only its fixed timeout code and kills i
   assert.equal(completed, false);
   t.mock.timers.tick(1); await rejected;
   assert.equal(killed, 1);
+});
+
+test('Windows production protection uses fixed private pipes and an allowlisted process environment', { skip: process.platform !== 'win32' }, async t => {
+  const child = new EventEmitter(); let request; let input;
+  child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+  child.stdin = Object.assign(new EventEmitter(), { end(wire) {
+    input = wire;
+    request = JSON.parse(wire.toString('utf8'));
+    queueMicrotask(() => { child.stdout.emit('data', Buffer.from('AQ==\r\n')); child.emit('close', 0); });
+  } });
+  child.kill = () => true;
+  const mock = t.mock.method(childProcess, 'spawn', () => child);
+  syncBuiltinESMExports();
+  t.after(() => { mock.mock.restore(); syncBuiltinESMExports(); });
+  const value = 'ephemeral-protocol-fixture';
+  const envelope = await sealSecret(value, { purpose: 'test/process-transport' });
+  assert.equal(mock.mock.callCount(), 1);
+  const [executable, args, options] = mock.mock.calls[0].arguments;
+  assert.ok(executable.endsWith('powershell.exe'));
+  assert.deepEqual(args.slice(0, 4), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command']);
+  assert.equal(args.length, 5);
+  assert.equal(args.join(' ').includes(value), false);
+  assert.equal(args.join(' ').includes(request.bytes), false);
+  assert.equal(args.join(' ').includes(request.entropy), false);
+  assert.equal(options.shell, false); assert.equal(options.windowsHide, true);
+  assert.deepEqual(options.stdio, ['pipe', 'pipe', 'pipe']);
+  const allowed = new Set(['SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA']);
+  assert.ok(Object.keys(options.env).every(key => allowed.has(key.toUpperCase())));
+  assert.deepEqual(Object.keys(request).sort(), ['bytes', 'entropy', 'operation']);
+  assert.equal(request.operation, 'protect');
+  assert.equal(Buffer.from(request.bytes, 'base64').toString('utf8'), JSON.stringify(value));
+  assert.deepEqual(Buffer.from(request.entropy, 'base64'), createHash('sha256').update('AnyAdapterHub:test/process-transport').digest());
+  assert.equal(envelope.protected, 'AQ==');
+  assert.ok(input.every(byte => byte === 0));
 });
 
 test('Windows spawn failure cannot forge the timeout code or leak its message', { skip: process.platform !== 'win32' }, async t => {

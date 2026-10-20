@@ -6,6 +6,11 @@ A local device hub for agents. **AnyAdapter** connects reviewed device adapters 
 
 **Development preview.** Live enrollment currently requires Windows, Node.js 22.13+ and Git for Windows with its bundled OpenSSL. Credentials use Windows CurrentUser DPAPI; clients use pinned loopback HTTPS. Linux and macOS lack a production secret provider and fail closed. Cross-platform CI is not a live-platform support claim. No independent security audit or npm release has been completed.
 
+The [platform architecture](docs/PLATFORM_ARCHITECTURE.md) uses one shared core
+with Windows, Linux and macOS distribution targets. OS-specific security code is
+isolated in a platform layer; native packages and a common graphical interface
+remain planned.
+
 ## What it does
 
 - Runs a local HTTPS hub with per-device state, freshness timestamps and SSE events.

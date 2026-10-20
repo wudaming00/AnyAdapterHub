@@ -7,11 +7,27 @@ AnyAdapter Hub is an independent local device control and observation layer for 
 - Loopback pinned HTTPS, Node SDK, authenticated SSE, state freshness and a persistent operation/event store.
 - Exact device/action grants, expiry/revocation, dispatch-time checks and idempotency with no automatic replay of ambiguous writes.
 - Windows CurrentUser DPAPI credentials and protected TLS identity, explicit migration and LG certificate-pinning rules.
+- Shared security policy separated from platform-specific DPAPI, private storage and fixed system-tool handling; informational Windows/Linux/macOS descriptors.
 - Optional reviewed adapter registry/dependencies, empty-core startup and separate LG observer/media selection.
 - One exact LG profile, historical control/observation hardware evidence, and experimental US/Windows ECOVACS X11 read-only evidence.
 - Open-source documentation, contribution/issue templates, profile/evidence/package/privacy checks, documentation link checks and Windows/Linux CI.
 
 This is a source preview. No independent security audit, hardened plugin sandbox, universal device support or published npm release is claimed.
+
+## One shared core, three platform distributions
+
+The accepted [platform architecture](PLATFORM_ARCHITECTURE.md) keeps protocols,
+authorization, state, execution and API behavior in one core. A future common
+interface will reuse those policies; OS layers supply credential protection,
+private storage and installation/service lifecycle. Optional device adapters
+remain optional in every distribution.
+
+Windows is the first working production provider. Linux and macOS production
+providers and all three native distribution packages are still planned.
+Shared-core tests or informational platform metadata do not enable live
+enrollment. Each platform needs actual vault/permission/process tests, an
+owner-authorized encrypted migration or fresh enrollment, independent technical
+review and administrator approval before its deployment claim can change.
 
 ## Next: validate the hardened LG path
 
