@@ -1,63 +1,150 @@
-# 架构与能力边界
+# Architecture
 
-项目名称为 **AnyAdapter Hub（万能适配）**。核心是独立的本地设备服务：任何经过授权的客户端都可以提交动作、读取状态和接收事件。Collie 可以作为客户端，核心不依赖 Collie、特定 Agent 或 MCP。
+AnyAdapter Hub is an independent local service for authorized device control and
+observation. CLI/SDK clients, agents and optional integrations use the same
+capability policy. It does not depend on a particular agent, Collie or MCP.
+Existing direct TV/MCP tools are separate entry points; they have not all been
+converted into Hub clients.
 
 ```mermaid
 flowchart LR
-    U[用户授权] --> C[CLI / SDK / 可选客户端]
-    C --> H[本地 HTTP API + SSE]
-    H --> P[能力与安全策略]
-    P --> Q[作业与设备队列]
-    Q --> R[经代码审查的适配器]
-    R --> D[设备]
-    D -->|状态与图像| R
-    R -->|状态与结果| S[本地状态与事件存储]
-    S --> H
-    J[社区 JSON 机型配置] -.兼容性与证据.-> P
+    O[Owner setup] --> C[Encrypted local enrollment]
+    A[Scoped agent / CLI / SDK] --> H[Pinned loopback HTTPS + SSE]
+    H --> P[Grant + action schema + local policy]
+    P --> J[Jobs + per-device dispatch queue]
+    J --> R[Fixed reviewed adapter registry]
+    C --> R
+    R --> D[Selected device / cloud target]
+    D --> R
+    R --> S[State + result evidence]
+    S --> DB[SQLite state / jobs / events]
+    DB --> H
+    R --> F[Separate expiring frame store]
+    F --> H
+    M[Strict model-profile JSON] -.compatibility evidence only.-> R
 ```
 
-## 服务与客户端
+## Components and authority
 
-`device-hub.mjs` 提供初始化、服务启动、CLI 调用和授权管理。服务仅绑定本机回环地址，HTTP 请求使用 Bearer 凭据；SSE 传送经过设备范围和能力检查的事件。Node SDK 位于 `lib/hub/client.mjs`，与服务通过同一 HTTP API 通信。
+| Component | Responsibility |
+| --- | --- |
+| `device-hub.mjs`, `lib/hub/config.mjs` | Owner setup, encrypted enrollment references, enabled adapters and per-device features |
+| `lib/hub/server.mjs`, `client.mjs` | Local HTTPS API, scoped SSE and Node client; fixed loopback binding and pinned server identity |
+| `lib/hub/policy.mjs` | Exact action IDs, bounded argument schemas, grants, URL/media policies and redaction |
+| `lib/hub/runtime.mjs`, `store.mjs` | Authorization, idempotent jobs, serial dispatch, snapshots, events and bounded frame storage |
+| `lib/hub/adapters.mjs` | Metadata-only catalog and lazy imports of fixed reviewed implementations |
+| `lib/adapters/` | Selected protocol implementation, readback, freshness, target binding and cleanup |
+| `lib/security/` | Purpose-bound encrypted secrets, Hub TLS identity and LG certificate trust |
+| `profiles/`, `lib/device-profile.mjs` | Exact model/firmware evidence data; no executable registration or permission grant |
 
-设备凭据只由服务端适配器使用，不交给普通客户端。客户端授权按设备、能力、有效期划分，可以撤销。读取状态、读取事件、发起截图和读取截图分别授权。MCP 或 Collie 的接入属于客户端集成，不应假定旧 MCP 入口已经全部改为经过 Hub。
+The owner selects local targets and configures upstream credentials. Scoped
+clients receive neither device credentials nor authority over other enrolled
+devices. Their grants name exact device IDs, capabilities and expiry and can be
+revoked. `state.read`, `events.read`, `app.list`, `screen.observe` and `screen.read`
+are distinct authorities; knowing a frame ID does not grant access to its bytes.
 
-## 设备状态与动作
+Install, enable, enroll, select features and grant are separate steps. Reviewed
+vendor source is included for inspection, while third-party vendor dependencies
+remain optional. Startup lazily loads only enabled enrolled adapters. An empty
+core can be initialized and served without loading a vendor or connecting to a
+device. See [modular architecture](MODULAR_ARCHITECTURE.md).
 
-LG 适配器使用已知 SSAP、DLNA 和机型特定观测通道。普通控制与临时特权观测分别授权；普通应用启动不能借助参数启动特权桥接。服务提供固定动作，不暴露任意 Luna、shell 或本地文件读取入口。
+## Adapter contract
 
-当前 LG 状态来源是默认约五秒一次的非重叠轮询，不宣称已具备持续 ACB 事件订阅。每个字段保存自己的 `observedAt`、`expiresAt`、`source` 和验证范围；状态读取另计算 `stale`。连接在线不表示所有字段都新鲜，最近一次截图也不等于当前实时画面。适配器事件不包含图像字节、电视地址或配对密钥。
+There is no abstract adapter base class or executable plugin API. The runtime
+consumes a small object contract: an explicit `supportedActions` list plus
+`subscribe()`, `start()`, `execute()` and `close()`. `observe()` is required only
+when the adapter advertises `screen.observe`. Both current adapters expose
+`snapshot()` as an implementation utility, and LG also exposes `identity()`;
+neither is a generic Hub-required method. The precise signatures and data shapes are in
+[adapter requirements](ADAPTER_REQUIREMENTS.md#runtime-contract).
 
-动作先经过能力与本地策略检查，再成为有截止时间和幂等键的作业。入队与实际派发前重新检查授权和期限。每设备队列串行处理刷新、控制和完整观测事务，避免后来的控制被观测恢复步骤覆盖。对可能已送达的写操作不自动重试；失败后只尝试读取状态进行核对。
+The Hub queues submitted operations per device. Each adapter also serializes its
+own polls, controls and observation transaction through a bounded shared queue.
+This prevents a polling race or a late observer restoration from overwriting
+the next command. Adapters publish projected local `device.state` events;
+`subscribe()` is not a claim of an upstream live telemetry subscription.
 
-重启时排队作业被取消，执行中的作业标为结果未知，不自动重放。任务结果区分 `confirmed`、`unconfirmed`、`failed`、`expired`、`unknown` 和 `cancelled`。确认只涵盖结果声明的范围，不能由“已确认应用前台”推导“电影已播放”。
+## State and freshness
 
-结果区分请求应答、状态读回和画面证据。应用启动要等待真实前台 ID；音量、静音和输入切换要读回；DLNA 控制读取其 transport 状态。临时观测能读取内部播放管线和截图，但 `playing` 仍可能来自预览，不能自动推断片名。
+A snapshot has `deviceId`, `revision`, `assembledAt`, `connection.phase` and
+`fields`. Every field carries its own `value`, `observedAt`, `expiresAt`, `source`
+and `verification`. Reads compute `stale` from expiry. An online connection does
+not make every field fresh; receipt time and the device's actual measurement time
+are different concepts.
 
-临时观测按次生成凭据和受限回传地址，限制来源设备、路由、时长与数据量。电视端只运行固定观测流程；结束后关闭覆盖层、恢复应用并核对受控资源清理。该通道依赖特定型号的系统行为，需显式本地 opt-in，不能推广为所有 webOS 电视可用的功能。
+LG normally polls about every five seconds, without overlapping work. Its
+ordinary state comes from SSAP; DLNA and temporary-observer data have their own
+sources. There is no general continuous ACB event stream. ECOVACS uses a cloud
+worker and polls no faster than every 30 seconds. Failed reads expire affected
+cached data. Clients must inspect freshness and verification scope rather than
+treat the newest event or screenshot as a live view.
 
-## 图像与历史
+## Jobs, deadlines and uncertainty
 
-截图与普通状态分别存储。动作结果可以给出帧 ID 和元数据；取得图片还需要该设备的 `screen.read` 授权，知道帧 ID 不等于获准读取。创建图像由 `screen.observe` 控制，并继续受设备本地观测开关约束。
+Submission checks the grant, advertised action, strict arguments and local
+policies before creating a job. Its client-scoped idempotency key is bound to
+the canonical request: the same request returns the same operation; reusing a key
+for different arguments is rejected. Persisted/public records omit sensitive
+arguments. An idempotency key does not make a device transactional or undo work.
 
-当前帧有效期为五分钟，每设备最多保留五帧，总图像大小有上限；过期帧不可读取，并由周期任务清理。删除记录不等于磁盘介质安全擦除。事件日志保留最近一万条，过旧的 SSE 游标可能存在缺口，应重新读取状态。作业及幂等记录不随事件日志裁剪，目前没有自动历史归档策略。
+The runtime checks authorization and deadline again at execution. The adapter
+must call `context.assertDispatch()` from inside its queue after asynchronous
+preparation and immediately before effects, repeating the check for later writes
+in a multi-step action. ECOVACS additionally waits for a worker preflight before
+authorizing movement. Revocation while waiting must prevent dispatch. Once work
+may have been sent, an error can leave the outcome `unknown`.
 
-## 机型配置是数据
+Jobs move from `queued`/`running` to `confirmed`, `unconfirmed`, `failed`,
+`expired`, `unknown` or `cancelled`. Confirmation means only the result's stated
+scope: foreground app, mute readback, DLNA transport state or a completed
+observation. Request acceptance is insufficient; a `playing` pipeline does not
+identify a movie, and robot state does not prove cleaning completion.
 
-配置仅描述型号、精确固件版本、已知适配器、已知能力及公开证据。运行时校验未知字段、重复键、原型污染、大小与嵌套限制。证据只接受仓库内脱敏文档引用。
+There is no automatic mutation retry or restart replay. At restart, queued jobs
+are cancelled and interrupted running jobs become unknown. Reconciliation uses
+fresh reads, not another write. A deadline cannot retract an effect already
+sent; cleanup of an already started observation still needs to finish safely.
 
-兼容性判断必须精确匹配设备身份。配置不能声明新端点、脚本、命令、网络地址、凭据或权限，也不能通过填写 `verified` 自动启用功能。`temporary-observe` 必须声明 `optInRequired:true`；展示该元数据仍不等于获得运行许可。
+## Observation and retention
 
-新增适配器或特权机制必须经过独立代码审查、测试及用户授权策略审查。社区提交的配置、证据和设备画面均按不可信输入处理。
+The B8 observer is a bounded, model-specific opt-in transaction. It temporarily
+uses a privileged system overlay and fixed internal service calls, then closes
+the overlay, restores the original app and checks owned capture cleanup. It is
+not a persistent TV agent, Linux root session, continuous video stream or access
+to Disney+ DOM/title internals.
 
-## 验证与后续接入
+The adapter returns JPEG bytes separately from sanitized metadata. The runtime
+stores them in an authenticated frame store and returns a frame reference.
+Current limits are a five-minute TTL, five frames per device, 10 MiB per frame
+and 32 MiB retained total; periodic pruning runs every 30 seconds. State/events
+never carry image bytes. Expired frames cannot be read. Record deletion does not
+promise secure erasure of disk blocks or backups.
 
-2026-10-19 已对单台 B8 完成本地 Hub HTTP 链路的有限真机验证，包括静音切换与恢复、幂等作业、截图回传、清理与应用恢复、授权拒绝及 SSE 事件。范围见 [本地 Hub 实测记录](LOCAL_HUB.md#live-verification)，不能外推到全部动作或其他型号。
+Events retain roughly the latest 10,000 records. An old SSE cursor can miss
+history; clients should reread state after gaps. Jobs and idempotency records
+currently have no automatic history archive/pruning policy.
 
-临时 B8 观测是按次读取状态和单帧截图，不是实时视频流，也不等于取得 Linux root、Disney+ DOM 或指定片名的播放证据。
+## Trust and current evidence
 
-Home Assistant、Matter 及其他厂商适配器是待评估的集成方向，当前未实现。后续接入仍须经过同一能力策略层，并保留各设备的状态反馈和权限边界。更换型号配置不会自动安装驱动、运行固件利用或提升权限。
+Live credentials and the Hub TLS key are protected by Windows CurrentUser DPAPI.
+macOS/Linux production secret providers are not implemented; explicit portable
+test providers do not change that deployment limit. Hub clients pin the local
+HTTPS identity. LG requires pinned WSS/HTTPS before sending its pairing key,
+with no plaintext downgrade. Initial trust enrollment and vendor-shared
+certificates have limits described in [secure setup](SECURE_SETUP.md).
 
-实测范围见 [B8 证据记录](evidence/lg-b8-2026-10-19.md)，风险和当前限制见 [安全说明](../SECURITY.md)。
+The Hub, reviewed adapters, dependencies, interpreter and OS account are trusted
+code. Lazy imports and a worker subprocess are not an OS sandbox. A client with
+only a scoped token has narrower rights; one with owner-file access or local
+code execution does not have that isolation. Profiles, evidence, device strings
+and screens are untrusted data and cannot authorize actions.
 
-启动命令、授权和 SDK 示例见 [本地 Hub 使用说明](LOCAL_HUB.md)。
+The [LG](evidence/lg-b8-2026-10-19.md) and
+[local Hub](evidence/local-hub-2026-10-19.md) records establish limited earlier
+hardware behavior; the new LG certificate-pinned path is not yet revalidated on
+that TV. [ECOVACS evidence](evidence/ecovacs-x11-2026-10-19.md) covers read-only
+worker/Hub state and details, not hardware movement tests. Home Assistant,
+Matter and other proposed integrations are not implemented. Consult the exact
+[support matrix](SUPPORTED_DEVICES.md), [security review](SECURITY_REVIEW.md) and
+[security policy](../SECURITY.md) before making wider claims.

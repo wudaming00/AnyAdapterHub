@@ -22,8 +22,12 @@ jobs:
       # Core installation has no mandatory vendor dependency. The complete test
       # matrix explicitly selects the reviewed LG transport and Python worker.
       - run: npm run adapter:lg:install
+      # Public tool metadata and an ephemeral non-secret CurrentUser roundtrip.
+      # Run before parallel tests so a cold Windows profile fails with context.
+      - run: node scripts/check-security-runtime.mjs
       - run: npm test
       - run: python -I -B optional/ecovacs/test_worker.py
       - run: npm run check:profiles
+      - run: npm run check:docs
       - run: npm run check:package
       - run: npm run check:public

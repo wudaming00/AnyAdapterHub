@@ -286,11 +286,11 @@ test('typeText never inserts on bare subscription acknowledgement or focus:false
     const { controller, ssap } = harness();
     ssap.autoFocus = false;
     const textValue = 'private-text-never-echo';
-    const pending = controller.typeText(textValue, { timeoutMs: 15 });
+    const rejected = assert.rejects(controller.typeText(textValue, { timeoutMs: 15 }), (error) => error.code === 'IME_FOCUS_TIMEOUT' &&
+      !error.message.includes(textValue) && !JSON.stringify(error).includes('private-widget-value'));
     await new Promise((resolve) => setImmediate(resolve));
     if (focusPayload) ssap.subscription.options.onUpdate(focusPayload);
-    await assert.rejects(pending, (error) => error.code === 'IME_FOCUS_TIMEOUT' &&
-      !error.message.includes(textValue) && !JSON.stringify(error).includes('private-widget-value'));
+    await rejected;
     assert.equal(ssap.calls.some((call) => call.uri.endsWith('/insertText')), false);
     controller.close();
   }

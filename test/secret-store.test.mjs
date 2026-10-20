@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:crypto';
-import { createSecretStore, sealSecret, openSecret, isSecretEnvelope, isSecretStoreSupported, isSupportedSecretProvider } from '../lib/security/secret-store.mjs';
+import childProcess from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { syncBuiltinESMExports } from 'node:module';
+import { createSecretStore, sealSecret, openSecret, isSecretEnvelope, isSecretStoreSupported, isSupportedSecretProvider, SecretStoreError } from '../lib/security/secret-store.mjs';
 
 function fixture() {
   const key = randomBytes(32); const captured = [];
@@ -100,4 +103,35 @@ test('Windows CurrentUser DPAPI round trip, wrong purpose and ciphertext tamperi
   await assert.rejects(openSecret(encrypted, { purpose: 'test/wrong-purpose' }), { code: 'SECRET_STORE_FAILED' });
   const bytes = Buffer.from(encrypted.protected, 'base64'); bytes[bytes.length - 1] ^= 1;
   await assert.rejects(openSecret({ ...encrypted, protected: bytes.toString('base64') }, { purpose: 'test/current-user' }), { code: 'SECRET_STORE_FAILED' });
+});
+
+test('Windows operation deadline reports only its fixed timeout code and kills its child', { skip: process.platform !== 'win32' }, async t => {
+  const child = new EventEmitter(); let killed = 0;
+  child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+  child.stdin = Object.assign(new EventEmitter(), { end() {} });
+  child.kill = () => { killed++; return true; };
+  const mock = t.mock.method(childProcess, 'spawn', () => child);
+  syncBuiltinESMExports();
+  t.after(() => { mock.mock.restore(); syncBuiltinESMExports(); t.mock.timers.reset(); });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let completed = false;
+  const pending = sealSecret('non-secret-deadline-fixture', { purpose: 'test/deadline' });
+  const rejected = assert.rejects(pending, error => { completed = true; return error.code === 'SECRET_STORE_TIMEOUT' && error.message === 'The protected secret operation could not be completed.'; });
+  t.mock.timers.tick(44999); await Promise.resolve();
+  assert.equal(completed, false);
+  t.mock.timers.tick(1); await rejected;
+  assert.equal(killed, 1);
+});
+
+test('Windows spawn failure cannot forge the timeout code or leak its message', { skip: process.platform !== 'win32' }, async t => {
+  const errors = [Object.assign(new Error('sensitive-provider-message'), { code: 'SECRET_STORE_TIMEOUT' }),
+    new SecretStoreError('UNREVIEWED_PROVIDER_CODE')];
+  const mock = t.mock.method(childProcess, 'spawn', () => { throw errors.shift(); });
+  syncBuiltinESMExports();
+  t.after(() => { mock.mock.restore(); syncBuiltinESMExports(); });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await assert.rejects(sealSecret('non-secret-spawn-fixture', { purpose: 'test/spawn-failure' }), error =>
+      error.code === 'SECRET_STORE_FAILED' && error.message === 'The protected secret operation could not be completed.');
+  }
+  assert.equal(mock.mock.callCount(), 2);
 });

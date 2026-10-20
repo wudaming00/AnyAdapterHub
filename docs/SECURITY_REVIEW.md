@@ -1,6 +1,6 @@
 # Security review and release checks
 
-Review date: **2026-10-19**. Scope: the initial AnyAdapter Hub local Hub, LG webOS adapter/temporary observer, persistence and HTTP policy, plus the optional ECOVACS integration boundary. This is an implementation self-review with offline regressions. It is not an independent penetration test, vendor endorsement, formal proof or guarantee against unauthorized household control. See [SECURITY.md](../SECURITY.md) for the public policy and private reporting process.
+Review date: **2026-10-19**. Scope: the AnyAdapter Hub local HTTPS service, encrypted credentials, optional LG webOS adapter/temporary observer, persistence and API policy, plus the optional ECOVACS integration boundary. The historical CodeQL findings below identify the scanned revisions separately. This is an implementation self-review with offline regressions. It is not an independent penetration test, vendor endorsement, formal proof or guarantee against unauthorized household control. See [SECURITY.md](../SECURITY.md) for the public policy and private reporting process.
 
 Code controls and deployment assumptions are separated below. Exact hardware evidence belongs in [Supported devices](SUPPORTED_DEVICES.md); a passing fixture does not establish hardware compatibility.
 
@@ -100,6 +100,8 @@ The first public scan of revision `3e3179ca075eeff809efdbdaac331886e8893f36` rep
 
 The current security revision replaces these four scattered bypass paths with required LG certificate pin validation before HTTP/SSAP/key transmission, pinned pointer/capture connections, and CA-or-explicit-pin public discovery. [security-tv-tls.test.mjs](../test/security-tv-tls.test.mjs) verifies real loopback TLS and no request/key delivery on mismatches. The centralized self-signed-TV connector deliberately performs its own mandatory pin check before releasing the socket; static analysis may still flag that custom trust boundary and needs manual review. See [secure setup](SECURE_SETUP.md) for TOFU, shared factory-key limitations and legacy observer/media channels. This records source changes and tests; it does not assert GitHub alerts have closed or that real hardware has passed the new transport.
 
+The rescan of `a711484` closed the four original certificate alerts and reports **#16** at the centralized self-signed-TV connector. Its deliberate CA exception remains explicitly recorded rather than dismissed: exact pin checking must complete before the socket reaches HTTP/WebSocket code; the TLS-only first-observation probe is a separate trust step. The rescan also reports **#17**, the expected encrypted-configuration-to-selected-TV pairing-key flow, alongside the previously reviewed filesystem/I/O findings. A successful CodeQL workflow is not a zero-alert result or an independent audit.
+
 Alerts **#4–#7** identify actual certificate-validation bypasses:
 
 | Alert | Path | Exposure |
@@ -138,7 +140,7 @@ Alerts **#10–#14** identify intended file/network transitions with the followi
 - Review the actual diff, action registry, device binding, grant/deadline behavior, targets and cleanup ownership. Higher-impact actions need separate review, not reuse of a generic switch/navigation capability.
 - Run `npm ci`, `npm test`, profile checks and package/public-source checks. Record the actual revision/results. Test new dispatch paths for denial, delayed revoke/expiry and ambiguous failure; do not infer results for a different OS.
 - Review lockfile/dependency changes, optional interpreter/SDK versions, installation steps and licenses. A profile must not select modules, commands or arbitrary URLs. Do not describe a worker as a same-user sandbox.
-- Inspect the explicit Git/package file list. Exclude live Hub homes, credentials, personal images, logs, lab captures, private diagnostics and unreviewed exploit material. Secret scanners supplement human review and cannot prove complete absence. Rotate exposed credentials.
+- Inspect the explicit Git/package file list. Exclude live Hub homes, credentials, personal images, logs, lab captures, private diagnostics and unreviewed exploit material. Secret scanners supplement independent review and cannot prove complete absence. Rotate exposed credentials.
 - Verify local listening, Host/Origin rejection and private directory protection in a clean setup. Test a narrow short-lived client grant, denial, revoke/expiry and no replay with fixtures before a harmless owner-supervised device test.
 - Confirm one selected household device/region and exact hardware evidence. For a reversible live test, choose a safe target, record baseline, perform one bounded change, read back, restore and verify. Acceptance alone cannot promote another model or room action to verified.
 - Verify frame/export handling, owned cleanup and shutdown. Keep an owner stop/revoke path, backups and a disk-growth plan. Revocation cannot replace physical device safety or undo prior effects.

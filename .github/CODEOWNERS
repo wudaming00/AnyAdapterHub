@@ -1,3 +1,4 @@
 # Capability registries, executable adapters, workflows and model evidence need
-# maintainer review. This file is a review requirement, not an OS sandbox.
+# review routing. Independent agent review is the merge gate; this ownership
+# metadata neither requires a second human account nor provides an OS sandbox.
 * @wudaming00

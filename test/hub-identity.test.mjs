@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createCipheriv, createDecipheriv, randomBytes, X509Certificate, createHash } from 'node:crypto';
 import https from 'node:https';
 import { createSecretStore, isSecretStoreSupported } from '../lib/security/secret-store.mjs';
-import { createHubIdentityManager, createHubIdentity, openHubIdentity, isHubIdentitySupported } from '../lib/security/hub-identity.mjs';
+import { createHubIdentityManager, createHubIdentity, openHubIdentity, isHubIdentitySupported, classifyIdentityProcessFailure } from '../lib/security/hub-identity.mjs';
 
 function fixture() {
   const key = randomBytes(32);
@@ -19,6 +19,14 @@ function fixture() {
   });
   return { store, manager: createHubIdentityManager(store) };
 }
+
+test('OpenSSL failure diagnostics produce only static categories and never copy private material', () => {
+  assert.equal(classifyIdentityProcessFailure('req: Unknown option -noenc'), 'HUB_IDENTITY_OPTION_UNSUPPORTED');
+  assert.equal(classifyIdentityProcessFailure('Could not open config file NUL'), 'HUB_IDENTITY_CONFIG_FAILED');
+  assert.equal(classifyIdentityProcessFailure('Error on line 2 of config input'), 'HUB_IDENTITY_CONFIG_FAILED');
+  for (const diagnostic of ['fixture-private-key-content', '-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----', 'X'.repeat(65537), null])
+    assert.equal(classifyIdentityProcessFailure(diagnostic), 'HUB_IDENTITY_PROCESS_EXIT');
+});
 
 test('identity has a loopback SAN, self signature, server usage, bound key and SHA256 certificate pin', async () => {
   const { manager } = fixture(); const identity = await manager.createHubIdentity();

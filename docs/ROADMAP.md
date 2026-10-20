@@ -1,60 +1,61 @@
 # Roadmap
 
-AnyAdapter Hub is a development preview of a local device control and observation layer for agents. The goal is to make permissions, targets and outcomes understandable across devices, while keeping the Hub independent of an agent framework.
+AnyAdapter Hub is an independent local device control and observation layer for agents. This page distinguishes implemented preview behavior from the remaining engineering work. It is not a delivery schedule or compatibility promise; [supported devices](SUPPORTED_DEVICES.md) and linked evidence define hardware scope.
 
-This is an ordered engineering plan, not a delivery schedule or compatibility promise. [Supported devices](SUPPORTED_DEVICES.md) is the source of truth for hardware evidence. A public repository, passing CI or an available upstream API does not make an integration production-ready.
+## Implemented development foundation
 
-## 1. Publish a reviewable foundation
+- Loopback pinned HTTPS, Node SDK, authenticated SSE, state freshness and a persistent operation/event store.
+- Exact device/action grants, expiry/revocation, dispatch-time checks and idempotency with no automatic replay of ambiguous writes.
+- Windows CurrentUser DPAPI credentials and protected TLS identity, explicit migration and LG certificate-pinning rules.
+- Optional reviewed adapter registry/dependencies, empty-core startup and separate LG observer/media selection.
+- One exact LG profile, historical control/observation hardware evidence, and experimental US/Windows ECOVACS X11 read-only evidence.
+- Open-source documentation, contribution/issue templates, profile/evidence/package/privacy checks, documentation link checks and Windows/Linux CI.
 
-Deliver a reproducible source checkout, documented local startup, scoped client grants, model-level evidence and an explicit license/provenance inventory. Keep private configurations, credentials, household media and experimental root/persistence payloads outside the public source and runtime package. npm publication remains a separate decision.
+This is a source preview. No independent security audit, hardened plugin sandbox, universal device support or published npm release is claimed.
 
-Release criteria:
+## Next: validate the hardened LG path
 
-- A clean checkout installs with lifecycle scripts disabled and passes the documented tests, profile/evidence validation, package-boundary checks and staged-source review on the supported platforms.
-- Public links resolve, the support matrix matches the evidence and current package contents, and separately licensed components retain their notices.
-- Automated security/dependency analysis runs on the public repository; findings are reviewed, not described as an independent audit or proof of security.
-- Setup and security documentation accurately explain local credential access, weak device transport authentication, frame retention and the limits of running an agent under the same OS account.
+The mandatory pinned transport has loopback TLS tests. The documented B8 still needs owner-supervised certificate enrollment and read-only hardware retesting after that change; an off television must not trigger plaintext fallback or automatic wake.
 
-## 2. Make the validated LG path dependable
+Acceptance criteria:
 
-Keep ordinary local control separate from the experimental B8 observer. Improve behavior around standby, reconnection, stale state and interrupted observation before broadening the model list.
+- Exact reviewed model/firmware and saved trust stay explicit. A changed certificate is not silently accepted; first trust and factory-shared-key limitations remain visible.
+- Exercise selected control/readback and standby/reconnection under the hardened connection, not just the earlier controller or HTTP Hub path.
+- Keep state timestamps, stale fields, acknowledgments and confirmed outcomes separate.
+- Verify restoration and cleanup for any explicitly authorized temporary observation. Its HTTP callback/media limitations remain separate from control-channel TLS.
+- Do not promote unverified content deep links or player `playing` state into verified title playback.
 
-Release criteria:
+## Improve enrollment and credential boundaries
 
-- The exact reviewed B8 model/firmware remains explicit. New models or firmware require their own evidence; observation fails closed when its reviewed identity does not match.
-- Controls, polls and observation use the same per-device queue. Tests cover grant revocation while queued, deadlines, ambiguous device writes and restart recovery without replay.
-- State fields retain observation time, expiry and verification scope. Transport ACKs are never promoted to a confirmed physical or app effect without adequate evidence.
-- Temporary observation has separate local opt-in, capture/read grants, bounded lifetime and storage, and visible restoration/cleanup results. It is not advertised as root access, continuous video or access to provider internals.
-- Reversible hardware tests read back the requested effect and restore the previous state where appropriate. Unsupported deep links, unverified controls and title-identification limits stay documented.
+Windows encryption is implemented. Linux/macOS production secret providers, cross-account secure grant enrollment/transfer, credential/certificate rotation workflows and stronger deployment isolation remain future work.
 
-## 3. Complete experimental vacuum-adapter validation
+A new provider must fail closed, bind ciphertext to its purpose, reject tampering and never use a master key stored beside the ciphertext. A worker boundary must define OS identity, network targets, filesystem permissions, resource limits and secret access; a subprocess or lazy import is not a sandbox.
 
-The optional Windows adapter for the US ECOVACS HOME DEEBOT X11 OmniCyclone, cloud class `huhcip`, is implemented. Fresh state and read-only details have now been verified on hardware through the Hub, together with rejection of movement and cross-device access by the read-only grant. Firmware is unknown. See the [adapter guide](ECOVACS_X11.md) and [evidence](evidence/ecovacs-x11-2026-10-19.md).
+## Finish ECOVACS movement validation
 
-The five movement actions have offline tests but no hardware validation through the new adapter. The next milestone is to establish their individual behavior when an owner authorizes a suitable hardware test, improve enrollment, and keep dependency/provenance review explicit. Do not inherit a movement claim from a separate MCP connector, an already running robot task or a test fixture.
+The optional US ECOVACS HOME DEEBOT X11 OmniCyclone adapter has hardware evidence for state and details only. Firmware is unknown. A general login/enrollment wizard is not included.
 
-Release criteria:
+Before broader support:
 
-- Private owner enrollment binds account region and one selected device; reconnects cannot silently substitute another vacuum.
-- Credentials and any external worker stay behind the adapter boundary. Optional dependencies, licenses and setup requirements are documented; no missing component is automatically downloaded or executed by a model profile.
-- Hardware evidence distinguishes command acceptance, current device state and completion. Room cleaning remains unverified until tested against the selected device's room mapping.
-- Maps, room labels and identifiers receive privacy review; only necessary data is exposed. Maintenance counters are labeled as counters, not measured component wear.
-- Unknown or timed-out outcomes remain unknown, with no automatic repeated cleaning or movement command.
+- Improve private owner enrollment while preserving one exact account region and selected device.
+- Test individual movement actions only when the owner authorizes a suitable physical scenario. Offline tests and an existing robot task do not establish a Hub-issued effect.
+- Keep request acceptance, observed state and completion separate, with no automatic retry of ambiguous movement.
+- Review cloud dependencies, token handling and licenses. Do not import maps, room identifiers, cameras or settings writes into an existing read grant.
 
-## 4. Prove the adapter contract on local lights and plugs
+See [the adapter guide](ECOVACS_X11.md) and [read-only evidence](evidence/ecovacs-x11-2026-10-19.md).
 
-Use a documented local light protocol and a documented local switch protocol to test whether the abstraction works beyond TVs. The proposed interfaces and official documentation are listed in [Supported devices](SUPPORTED_DEVICES.md#proposed-next-integrations); these entries are not implemented support.
+## Prove the abstraction on lights and plugs
 
-Begin with a single lamp and an identified noncritical plug load. Expose explicit setters and readback, not generic vendor RPC or whole-home scenes. Each addition needs exact hardware/firmware evidence, target binding, bounded parameters and tests for denied access, stale state and disconnects.
+No light, plug, Home Assistant or Matter adapter is implemented in this revision. Proposed directions and primary-source interface links are in [the support matrix](SUPPORTED_DEVICES.md#proposed-next-integrations).
 
-After that, evaluate an allowlisted Home Assistant bridge and access to already commissioned Matter devices. Reuse owner-controlled enrollment; do not import every entity or expose arbitrary service calls. Native Matter commissioning and unrestricted Android debugging are outside this milestone.
+Begin with one lamp or an identified noncritical plug load: explicit on/off, bounded brightness where appropriate, and fresh readback. Do not expose a general vendor RPC, whole-home scenes, scripts or configuration services.
 
-## 5. Grow through evidence, not automatic trust
+An eventual Home Assistant bridge should allowlist individual entities/actions. Existing commissioning may help a Matter bridge, but native commissioning is not currently provided. Each path still needs exact enrollment, capabilities, evidence and failure tests.
 
-Make model reports and adapter reviews straightforward for contributors. Keep pure JSON compatibility data separate from executable protocol code. Validate evidence references and schemas, then apply human review: a well-formed claim may still be wrong or fabricated.
+## Grow a reviewable adapter community
 
-Before expanding a release's support list, require a reproducible sanitized hardware report, negative tests, compatible license notices and documented verification limits. A merged profile must not enable permissions or install code in a user's home. Firmware changes and regressions can narrow support again.
+Use [the profile walkthrough](CONTRIBUTOR_GUIDE.md) for existing protocols and [the code contract](ADAPTER_REQUIREMENTS.md) for new executable behavior. Validate evidence links and schemas, then review the claims. Firmware changes and regressions can narrow support.
 
-Higher-impact devices such as locks, alarms, cameras, valves and cooking appliances require a separate threat/capability review. Existing light, switch or read permissions must not silently expand to them. The preview does not include automatic firmware replacement, universal root/shell access or arbitrary community-script execution.
+Locks, alarms, cameras, valves, heating/cooking equipment and critical electrical loads require a separate safety/privacy/capability review. Existing remote-key, vacuum or generic switch authority must not silently expand to those classes. Automatic firmware replacement, universal root/shell access and profile-driven script installation are outside the preview.
 
-See [adapter requirements](ADAPTER_REQUIREMENTS.md), [security](../SECURITY.md) and [contribution guidelines](../CONTRIBUTING.md) for the acceptance boundaries used across these milestones.
+Release/review procedures are documented in [maintainer checks](MAINTAINING.md).

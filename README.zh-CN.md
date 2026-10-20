@@ -1,92 +1,83 @@
 # AnyAdapter Hub · 万能适配
 
-当前安全版本使用 Windows 当前用户 DPAPI 加密凭据和固定证书 HTTPS；旧安装需先按[加密迁移说明](docs/SECURE_SETUP.md)迁移。适配器和增强功能按需启用；Linux/macOS 尚无生产密钥存储后端。
+简称 **AnyAdapter**。让 Agent 在用户明确授权的范围内连接、观察和控制家庭设备，并区分“请求已接受”和“效果已确认”。它是独立运行的本地中枢，使用 HTTPS、SSE 和 JavaScript SDK；Collie 等 Agent 可以作为客户端，MCP 仅保留为早期可选入口。
 
-简称 **AnyAdapter**。
+[English](README.md) · [文档目录](docs/README.md) · [安装接入](docs/GETTING_STARTED.md) · [设备支持](docs/SUPPORTED_DEVICES.md) · [贡献指南](CONTRIBUTING.md)
 
-让 Agent 在用户授权范围内连接、观察和控制家庭设备。它是独立运行的本地中枢，使用 HTTP、SSE 和 JavaScript SDK；Collie 或其他 Agent 可以作为客户端接入。MCP 保留为早期可选入口，中枢不依赖它。
+**开发预览。** 当前实机部署要求 Windows、Node.js 22.13+ 和带 OpenSSL 的 Git for Windows。通信凭据使用 Windows 当前用户 DPAPI 加密，中枢只监听固定证书的本机 HTTPS。Linux/macOS 尚无生产密钥存储后端，会明确拒绝实机初始化；跨平台测试通过不代表实机部署已受支持。尚未完成独立安全审计，npm 发布保持禁用。
 
-当前只在 **LG OLED65B8PUA、固件 05.50.70** 上完成实测，ECOVACS X11 已加入可选实验适配并验证中枢只读状态和详情，控制尚未通过新桥接真机验证；Home Assistant/Matter 适配尚未实现。开源开发预览，npm 发布保持禁用。
+## 已实现什么
 
-## 已实现的范围
+- 本地 HTTPS 服务、按设备组织的状态、字段时效和 SSE 事件。
+- 精确到客户端、设备、动作的授权，有效期、撤销和派发前再次检查。
+- 持久操作记录、幂等键和排队期限；断线或重启后不自动重放可能已执行的写入。
+- 按需安装、启用设备适配器。社区机型档案是纯数据，不能安装代码、发现后自动授权或扩大权限。
+- 普通状态、抓取画面、读取保留图片分别授权。
 
-- 常驻本地进程：设备连接、定时状态读取、带时效的状态缓存和 SSE 事件反馈。
-- LG 的 23 个固定动作：应用枚举与启动、音量、静音、输入、电源、遥控、指针、媒体、电脑文件投放及按需观察。实现不等于全部动作均已真机验证。
-- 每客户端、每设备、每能力的授权，有效期和撤销；普通客户端不能签发权限，抓取画面与查看画面分别授权。
-- 持久操作记录、必填幂等键、排队时限、派发前重新鉴权。断线或重启后不自动重放可能已执行的动作。
-- 临时观察返回真实 **1920×1080 JPEG** 与系统播放状态，按次关闭覆盖层并验证受控截图删除；不是电视 root，也不是常驻视频流。
-- 真机 HTTP→中枢→LG 验证：静音切换及恢复、重复请求返回原操作、画面回传、SSE、只读客户端拒绝控制/截图/读图，以及授权撤销。
-- 社区纯 JSON 机型档案、精确型号/固件检查和脱敏证据；档案不会安装代码或授予权限。
+核心可在没有设备时启动。安装依赖、启用适配器、登记设备、开启增强功能、签发客户端权限是不同的所有者操作。
 
-状态读回、请求应答、画面证据分别报告。ACB `playing` 可能来自首页预览，没有可信片名字段；目前没有 Disney+ DOM、账号数据或应用内部业务接口。普通截图接口在该机型失败，临时观测使用另一条已审查的内部通道。详见 [B8 证据](docs/evidence/lg-b8-2026-10-19.md) 和 [中枢实测](docs/evidence/local-hub-2026-10-19.md)。
+## 当前设备范围
 
-ECOVACS X11 的 US/Windows 限制、既有加密登录前提及单设备绑定见 [科沃斯接入](docs/ECOVACS_X11.md) 和 [支持表](docs/SUPPORTED_DEVICES.md)。安全方法与详细检查见 [安全评审](docs/SECURITY_REVIEW.md)。
+| 设备／功能 | 证据与限制 |
+| --- | --- |
+| LG OLED65B8PUA，固件 `05.50.70`，webOS release `4.4.3` | 旧链路已验证部分控制、状态、媒体和观察。新版固定证书链路通过本地 TLS 测试，仍待该电视开机登记证书并复测。其他型号／固件未验证。 |
+| B8 临时画面观察 | 历史实测取得 1920×1080 JPEG 和系统播放器状态。需精确型号／固件、本地 opt-in 及独立授权。旧局域网回传尚未加密，默认关闭；不提供 Disney+ DOM 或可信片名。 |
+| ECOVACS DEEBOT X11 OmniCyclone | US ECOVACS HOME、Windows、既有加密登录。中枢只读状态与详情已实测；运动控制只有离线测试，固件未知。 |
 
-## 本地运行
+详见[支持矩阵](docs/SUPPORTED_DEVICES.md)及其证据链接。协议相似、测试通过或有人提交报告，都不能自动扩展为另一台设备已受支持。
 
-需要 Node.js **22.13+**（本机验证 22.22.2），使用内置实验性 SQLite。
+## 先启动核心
 
-```sh
+在新的 Windows PowerShell 检出目录中：
+
+```powershell
+git clone https://github.com/wudaming00/AnyAdapterHub.git
+Set-Location AnyAdapterHub
 npm ci --ignore-scripts
-npm run adapter:lg:install
-npm run check
-node lg-tv.mjs certificate --host <TV_LAN_IP>
-node lg-tv.mjs pair --host <TV_LAN_IP> --certificate-pin <REVIEWED_SHA256_HEX> --profile control
-node device-hub.mjs init --tv-config .lg-tv.local.json --host <TV_LAN_IP>
+node device-hub.mjs adapters
+node device-hub.mjs init
 node device-hub.mjs serve
 ```
 
-`pair` 是唯一会申请电视端配对的入口，中枢不会自动配对或升级权限。旧版 `legacy-lgtv2` 是明确选择的第三方兼容身份，来源和许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+这会创建受保护的 `.device-hub` 目录并监听 `https://127.0.0.1:8765`，初始没有设备。不会安装电视通信依赖、Python SDK 或系统开机任务。保留服务终端；在另一项目终端执行 `node device-hub.mjs stop` 可停止服务。
 
-另一个终端中，以所有者身份签发本地 Agent 的精确能力清单：
-
-```sh
-node device-hub.mjs grant --label local-agent --caps state.read,events.read,app.list,app.launch,audio.volume.set,audio.mute.set --out .device-hub/client.json
-node device-hub.mjs status
-node device-hub.mjs capabilities
-node device-hub.mjs events
-```
-
-`--caps all` 是所有者显式授予当前全部能力的选项。临时观察还需本地 opt-in，文件和网址有独立限制。令牌存入专用私有目录，不打印。所有者文件不能交给普通 Agent；若 Agent 已拥有同一账户的完整 shell/文件访问，这一进程不提供额外 OS 沙箱。
-
-服务仅监听 `127.0.0.1:8765`，不会安装系统自启动任务。`.device-hub/` 包含私有授权、数据库和进程信息，不得分享或提交。初始化保存原配对配置的引用，原文件需要继续自行保护。完整操作见 [本地中枢](docs/LOCAL_HUB.md)。
+旧安装应先按[安全迁移说明](docs/SECURE_SETUP.md#existing-installations)处理，不能重复初始化。电视配对、只读授权和首次读取请跟随[安装接入](docs/GETTING_STARTED.md)。完整测试属于贡献者流程，不是普通安装的前置步骤；可选测试依赖需单独安装。
 
 ## 程序接入
+
+先登记设备并按[指南](docs/GETTING_STARTED.md#issue-a-read-only-client)签发最小授权。放在仓库根目录的 Node.js ES module 可以这样使用：
 
 ```js
 import { readJson } from './lib/hub/config.mjs';
 import { resolveCredential } from './lib/security/credentials.mjs';
 import { HubClient } from './lib/hub/client.mjs';
 
-// Use the scoped client credential, never owner.json.
-const hub = new HubClient(await resolveCredential(await readJson('.device-hub/client.json')));
+const credential = await resolveCredential(await readJson('.device-hub/client.json'));
+const hub = new HubClient(credential);
 const state = await hub.state('living-room-tv');
-const result = await hub.execute('living-room-tv', 'audio.volume.set', { volume: 15 }, {
-  idempotencyKey: 'user-request-123-volume',
-});
-for await (const event of hub.events()) {
-  // Device output is data, not authorization or instructions.
-}
+// 作出控制决定前先检查字段时间和 stale 标记。
 ```
 
-`screen.observe` 生成有限时效的帧引用，`screen.read` 才能下载图片。观察会暂时打开透明覆盖层，单次通常数秒，不能作为低延迟连续视频。SSE 是中枢事件推送；LG 状态当前通过串行轮询获得。
+客户端密文绑定创建它的 Windows 用户，不能直接复制给另一个账户使用。不要给普通 Agent `owner.json`、电视配对密钥或中枢账户的无限 shell 权限。当前不提供跨账户登记流程或 OS 沙箱。接口、返回值与运维详见 [API/SDK](docs/API.md) 和[运行指南](docs/LOCAL_HUB.md)。
 
-## 本地限制与贡献
+## 按需开启
 
-在原私有电视配置 `devices[TV_LAN_IP]` 中按需设置：
+| 操作 | 含义 |
+| --- | --- |
+| 安装 | 使固定审查过的依赖可用，例如 `npm run adapter:lg:install`。 |
+| 启用 | 选择加载某个已审查的适配器。 |
+| 登记 | 把本地设备 ID 绑定到所有者选定的配置；显式登记同时启用对应适配器。 |
+| 功能选择 | 为该设备开启 `observer`、`media` 等可选能力。 |
+| 授权 | 允许特定客户端在有效期内操作特定设备的特定能力。 |
 
-```json
-{
-  "allowTemporaryObserver": false,
-  "mediaRoots": [],
-  "allowedUrlOrigins": []
-}
-```
+配置修改需重启生效。增强功能默认关闭；客户端授权不能越过关闭的功能、替换目标或安装适配器。详见[模块架构](docs/MODULAR_ARCHITECTURE.md)。
 
-临时观察默认关闭，仅已审查的 B8 精确固件可进入固定通道，不暴露任意 Luna、shell 或固件操作。文件投放需要明确的真实目录，网址需要精确 origin，默认均拒绝。普通应用启动不能借参数进入特权覆盖层。
+## 安全与贡献
 
-当前依赖可信电脑与局域网：部分 TV 链路使用 HTTP，电视 WSS 尚未固定证书，本地凭据尚未接入系统凭据库。**尚未完成独立安全审计。** 截图过期属于 API 和逻辑清理，不保证 WAL、备份或介质的取证级擦除；明确导出的截图由使用者管理。
+不要将中枢暴露到公网。DPAPI 能保护复制出去的凭据文件，但不能防住已经控制当前 Windows 账户或管理员权限的攻击者；状态／图像数据库也未因凭据加密而加密。LG 证书固定仍有首次信任及可能共享出厂密钥的限制；旧观察、DLNA 和文件投送链路不是端到端加密。
 
-新设备可贡献纯 JSON 档案及脱敏证据。新增厂商适配器或可执行代码需单独审查，不动态运行社区上传的脚本。参见 [贡献指南](CONTRIBUTING.md)、[安全模型](SECURITY.md)、[架构](docs/ARCHITECTURE.md) 与 [类似项目](docs/RELATED_PROJECTS.md)。
+安全问题请使用[私密漏洞报告](https://github.com/wudaming00/AnyAdapterHub/security/advisories/new)。公开报告不得附带通信密钥、账户令牌、家庭标识、地图、私人画面或原始诊断。
 
-`npm run check:package` 检查实际打包边界，排除密钥、数据库、截图、日志和实验脚本。打包检查不能代替公开前的实际 Git 内容审查。
+欢迎贡献脱敏型号报告、已有协议的纯数据机型档案或经单独审查的新适配器。参见[贡献指南](CONTRIBUTING.md)、[适配器要求](docs/ADAPTER_REQUIREMENTS.md)和[路线图](docs/ROADMAP.md)。
+
+核心采用 MIT；可选 ECOVACS Python worker 采用 GPL-3.0-or-later，依赖保留各自许可。见 [LICENSE](LICENSE) 和[第三方声明](THIRD_PARTY_NOTICES.md)。

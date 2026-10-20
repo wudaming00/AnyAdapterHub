@@ -13,6 +13,13 @@ AnyAdapter Hub aims to give agents a consistent way to control devices and obser
 
 The reviewed LG profile is [lg-oled65b8pua-webos4.json](../profiles/lg-oled65b8pua-webos4.json). Its `verified`, `unverified` and `unsupported` labels describe test evidence; they do not grant a client permission to operate the device.
 
+**Transport scope:** the LG hardware records below predate the mandatory pinned
+TLS change. The new SSAP/pointer/capture connection rules have local loopback TLS
+tests, but this B8 still needs certificate enrollment and hardware retesting after
+the change. Its off/standby state does not justify a plaintext fallback. Live Hub
+credential storage currently requires Windows CurrentUser DPAPI; Linux/macOS test
+results do not establish live platform support. See [secure setup](SECURE_SETUP.md).
+
 ## LG OLED65B8PUA: what was verified
 
 Evidence is recorded in the [device tests](evidence/lg-b8-2026-10-19.md) and [local Hub tests](evidence/local-hub-2026-10-19.md). Some tests exercised the underlying controller or MCP path; the Hub HTTP path was separately checked for state, mute, observation, authorization, idempotency and event delivery. This is not a claim that every Hub action was exercised on hardware.
@@ -29,7 +36,7 @@ Text entry, pointer move/click/scroll, generic app media controls, audio-output 
 
 ### Screenshot and playback limits
 
-Ordinary SSAP screenshots failed on this firmware. The working observer temporarily uses a model-specific privileged system overlay and fixed internal service calls. It requires an exact reviewed identity, the owner's explicit local `allowTemporaryObserver` setting and the appropriate client grant. `screen.observe` and `screen.read` are separate permissions.
+Ordinary SSAP screenshots failed on this firmware. The historically working observer temporarily uses a model-specific privileged system overlay and fixed internal service calls. It requires an exact reviewed identity, the Hub's `observer` feature, the owner's explicit local `allowTemporaryObserver` setting and the appropriate client grant. `screen.observe` and `screen.read` are separate permissions. Its legacy HTTP callback is not end-to-end encrypted; the feature defaults off. Ordinary capture downloads now require pinned HTTPS and refuse an HTTP image URL.
 
 Successful observations included closing the overlay, restoring the original application and checking that the owned temporary capture was deleted. This mechanism **does not establish Linux root access**, replace the OS or provide Disney+ DOM, account internals or a trustworthy title field. ACB `playing` can describe a homepage preview; `titlePlaybackVerified` remains false. Observation is a bounded transaction taking seconds, not a low-latency screen stream. Cleanup failures must remain visible to the caller.
 
