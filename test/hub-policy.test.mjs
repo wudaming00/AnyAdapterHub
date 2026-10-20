@@ -16,7 +16,7 @@ const EXAMPLES = {
   'audio.volume.set': { volume: 25 }, 'audio.mute.set': { muted: false },
   'app.list': {},
   'app.launch': { id: 'com.disney.disneyplus-prod' }, 'app.content.launch': { id: 'com.disney.disneyplus-prod', content: '70GoJHflgHH9' },
-  'navigation.key': { key: 'ENTER' }, 'pointer.move': { dx: -2, dy: 3 }, 'pointer.click': {}, 'pointer.scroll': { dx: 0, dy: -1 },
+  'navigation.key': { key: 'ENTER' }, 'navigation.sequence': { keys: ['LEFT', 'ENTER'] }, 'pointer.move': { dx: -2, dy: 3 }, 'pointer.click': {}, 'pointer.scroll': { dx: 0, dy: -1 },
   'media.control': { action: 'pause' }, 'input.select': { id: 'HDMI_1' }, 'audio.output.set': { id: 'tv_speaker' },
   'display.set': { on: true }, 'power.off': {}, 'power.wake': {}, 'text.focus.read': {}, 'text.insert': { text: 'private typed text' },
   'url.open': { url: 'https://media.example/watch' }, 'media.url.play': { url: 'https://media.example/clip.mp4', mimeType: 'video/mp4' },
@@ -27,7 +27,7 @@ const EXAMPLES = {
 };
 
 test('registry contains only fixed reviewed actions and immutable strict JSON schemas', () => {
-  assert.equal(Object.keys(ACTIONS).length, 34);
+  assert.equal(Object.keys(ACTIONS).length, 35);
   assert.deepEqual(Object.keys(EXAMPLES).sort(), Object.keys(ACTIONS).sort());
   assert.deepEqual(READ_CAPABILITIES, ['state.read', 'events.read', 'screen.read']);
   for (const definition of Object.values(ACTIONS)) {
@@ -86,6 +86,24 @@ test('prototype values, proxies and accessors are rejected without invoking code
     throws(() => check('audio.volume.set', args), 'INVALID_ARGUMENTS');
   }
   throws(() => validateAction('screen.observe', {}, Object.defineProperty({}, 'deviceConfig', { enumerable: true, get() { invoked++; return DEVICE; } })), 'INVALID_ARGUMENTS');
+  assert.equal(invoked, 0);
+});
+
+test('navigation sequences copy bounded fixed keys, reject executable arrays and require their own exact capability', () => {
+  let invoked = 0;
+  const keys = ['LEFT', 'ENTER'], output = check('navigation.sequence', { keys }); keys[0] = 'POWER';
+  assert.deepEqual(output, { keys: ['LEFT', 'ENTER'] });
+  const accessor = ['LEFT']; Object.defineProperty(accessor, '0', { enumerable: true, get() { invoked++; return 'ENTER'; } });
+  const extra = ['LEFT']; extra.endpoint = 'not-allowed';
+  for (const value of [[], Array(1), Array(13).fill('LEFT'), ['LEFT', 'POWER'], ['SEARCH'], ['left'], accessor, extra,
+    new Proxy(['LEFT'], { ownKeys() { invoked++; return []; } }), Object.assign(['LEFT'], { [Symbol('hidden')]: true })]) {
+    throws(() => check('navigation.sequence', { keys: value }), 'INVALID_ARGUMENTS');
+  }
+  for (const notAfter of ['2026-02-30T00:00:00.000Z', '2026-10-20T00:00:00Z', '2026-10-20T00:00:00.000+00:00', 'invalid']) {
+    throws(() => check('navigation.sequence', { keys: ['LEFT'], notAfter }), 'INVALID_ARGUMENTS');
+  }
+  const notAfter = '2026-10-20T00:00:00.000Z'; assert.equal(check('navigation.sequence', { keys: ['LEFT'], notAfter }).notAfter, notAfter);
+  throws(() => authorize(grant({ capabilities: ['navigation.key'] }), { deviceId: 'tv', capability: 'navigation.sequence', now: NOW }), 'ACCESS_DENIED');
   assert.equal(invoked, 0);
 });
 
