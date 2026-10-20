@@ -16,12 +16,12 @@ const HELP = `AnyAdapter Hub local device hub
   node device-hub.mjs init --tv-config FILE --host PRIVATE_IP [--id living-room-tv] [--port 8765]
   node device-hub.mjs init --ecovacs-config FILE [--id vacuum] [--port 8765]
   node device-hub.mjs add --ecovacs-config FILE [--id vacuum] [--home .device-hub]
-  node device-hub.mjs init|add --adapter home-assistant|mqtt-tls --config FILE --id ID
+  node device-hub.mjs init|add --adapter ADAPTER --config FILE --id ID
   node device-hub.mjs serve [--home .device-hub]
   node device-hub.mjs init [--home .device-hub]  (empty core, no adapters)
   node device-hub.mjs adapters
   node device-hub.mjs enable|disable --adapter ADAPTER
-  node device-hub.mjs features --device ID --features observer,media  (empty string disables both)
+  node device-hub.mjs features --device ID --features NAME,...  (empty string disables features)
   node device-hub.mjs migrate-security [--tv-config FILE] [--legacy-tv-config FILE]
   node device-hub.mjs stop [--home .device-hub]
   node device-hub.mjs status|capabilities [--device living-room-tv] [--credential FILE]

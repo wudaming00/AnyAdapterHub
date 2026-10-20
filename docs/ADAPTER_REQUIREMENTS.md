@@ -13,7 +13,9 @@ behavior is defined by [runtime.mjs](../lib/hub/runtime.mjs),
 
 ## Runtime contract
 
-There is no adapter superclass or general plugin loader. The fixed registry
+There is no general plugin loader. Some fixed adapters share a trusted internal
+lifecycle helper; this does not create a contributor-defined extension mechanism.
+The fixed registry
 constructs the adapter for an owner-enrolled opaque device ID and private
 configuration. Constructors must not discover, pair, connect or dispatch work.
 Production callers use `createAdapter({adapterName,id,config,features})` from
@@ -75,6 +77,11 @@ on denial: do not catch the error and continue dispatching. Some existing
 implementations also accept a cancellation signal locally; the Hub currently
 passes only the two fields above.
 
+`assertDispatch` must complete synchronously and return `undefined` on success.
+Promises, thenables and other return values are not approval. Reject them before
+marking/sending an effect, without evaluating a returned `.then` getter. Observe
+a returned native promise's rejection to avoid an unhandled background error.
+
 Return a sanitized object with `requestAccepted` (boolean or null), `confirmed`
 and a precise `verificationScope` where relevant. Use `uncertain:true` for a
 possibly sent effect whose result cannot be determined. The runtime maps it to
@@ -135,9 +142,11 @@ Do not expose generic shell, HTTP/RPC/MQTT/Luna/ADB passthrough, arbitrary launc
 parameters, arbitrary services or executable community scripts. In LG, ordinary
 app launch must not reach the privileged observer overlay. Future Home Assistant
 expansions or ADB integrations need fixed entity/action/command allowlists;
-mentioning them in a profile cannot implement or authorize them. The current
-experimental HA path covers one enrolled HTTPS light only; it does not expose
-arbitrary HA services, switches, sensors, scripts or templates.
+mentioning them in a profile cannot implement or authorize them. The experimental
+`home-assistant` path covers one enrolled HTTPS light. The separate
+`home-assistant-sensor` path reads one selected entity with a fixed measurement
+contract. Neither exposes arbitrary HA services, switches, sensor contracts,
+scripts or templates.
 
 The experimental `home-assistant` adapter advertises no actions by default.
 Its `control` feature adds `light.power.set` with `{on:boolean}`; `dimming`

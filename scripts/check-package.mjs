@@ -19,4 +19,8 @@ for (const required of ['SECURITY.md', 'CONTRIBUTING.md', 'LICENSE', 'device-hub
   if (!listing.files.some(item => item.path === required)) throw new Error('Missing runtime/review file: ' + required);
 }
 if (listing.files.some(item => /(^|\/)(?:__pycache__|\.venv)(\/|$)|\.pyc$/i.test(item.path))) throw new Error('Python caches entered the package.');
+for (const name of ['philips-hue', 'shelly-gen2', 'switchbot', 'lg-thinq', 'home-assistant-sensor', 'openhab', 'plex', 'awair', 'purpleair']) {
+  for (const suffix of ['', '-config']) if (!listing.files.some(item => item.path === `lib/adapters/${name}${suffix}.mjs`)) throw new Error('Missing reviewed integration source.');
+}
+for (const name of ['scripts/enroll-integration.mjs', 'lib/security/vendor-json-https.mjs', 'docs/COMMON_ADAPTERS.md']) if (!listing.files.some(item => item.path === name)) throw new Error('Missing common integration setup source.');
 console.log(`Package boundary verified (${listing.files.length} files); nothing published.`);

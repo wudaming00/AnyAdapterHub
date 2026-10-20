@@ -36,6 +36,9 @@ Windows、Linux 和 macOS 共享协议、权限、状态和 API；操作系统�
 [50 项设备集成路线图](docs/DEVICE_ROADMAP.md)列出官方或社区接口、开发优先级与限制。
 首批两条新接入的本地隐藏凭据录入、加密保存和授权步骤见[实验适配器指南](docs/POPULAR_ADAPTERS.md)。
 
+源码目录现有 **13 个适配入口**。新增 Hue、Shelly、SwitchBot、ThinQ、HA 传感器、openHAB、Plex 公开状态、Awair 和 PurpleAir 共 9 个实验入口；大部分只读，Hue/Shelly 的写入另需功能开关和授权。
+详见[常见设备接入](docs/COMMON_ADAPTERS.md)。这些新增入口目前有离线软件验证，尚无对应家庭硬件实测。
+
 ## 先启动核心
 
 在新的 Windows PowerShell 检出目录中：

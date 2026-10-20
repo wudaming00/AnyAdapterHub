@@ -4,12 +4,26 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emitKeypressEvents } from 'node:readline';
 import { types } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import { readJson, protectHubHome, writePrivateJson } from '../lib/hub/config.mjs';
 import { protectHomeAssistantConfig } from '../lib/adapters/home-assistant-config.mjs';
 import { protectMQTTConfig } from '../lib/adapters/mqtt-config.mjs';
 
 const fail = (code = 'INVALID_ENROLLMENT') => { const error = new Error('Local integration enrollment could not complete.'); error.code = code; throw error; };
-const ADAPTERS = ['home-assistant', 'mqtt-tls'];
+// Fixed reviewed source, not executable device/profile-supplied metadata.
+const INTEGRATIONS = {
+  'home-assistant': { metadata: ['origin', 'entityId', 'certificatePin', 'timeoutMs'], certificate: 'certificate', secrets: [['token', 'Home Assistant token', 4096]], protect: protectHomeAssistantConfig },
+  'mqtt-tls': { metadata: ['host', 'port', 'certificatePin', 'topic', 'measurement'], certificate: 'certificatePem', secrets: [['username', 'MQTT username', 256], ['password', 'MQTT password', 4096]], protect: protectMQTTConfig },
+  'philips-hue': { metadata: ['origin', 'certificatePin', 'lightId', 'bridgeId', 'timeoutMs'], certificate: 'certificate', secrets: [['applicationKey', 'Hue application key', 4096]], protect: async (value, options) => (await import('../lib/adapters/philips-hue-config.mjs')).protectPhilipsHueConfig(value, options) },
+  'shelly-gen2': { metadata: ['origin', 'certificatePin', 'expectedDeviceId', 'componentId', 'loadClass', 'timeoutMs'], certificate: 'certificate', secrets: [['password', 'Shelly admin password', 4096]], prepare: metadata => ({ ...metadata, username: 'admin' }), protect: async (value, options) => (await import('../lib/adapters/shelly-gen2-config.mjs')).protectShellyGen2Config(value, options) },
+  switchbot: { metadata: ['vendorDeviceId', 'deviceType', 'timeoutMs'], secrets: [['token', 'SwitchBot token', 4096], ['secret', 'SwitchBot signing secret', 4096]], protect: async (value, options) => (await import('../lib/adapters/switchbot-config.mjs')).protectSwitchBotConfig(value, options) },
+  'lg-thinq': { metadata: ['vendorDeviceId', 'deviceType', 'countryCode', 'clientId', 'timeoutMs'], secrets: [['token', 'ThinQ token', 4096], ['apiKey', 'ThinQ application API key', 4096]], prepare: metadata => ({ ...metadata, clientId: metadata.clientId ?? randomUUID() }), protect: async (value, options) => (await import('../lib/adapters/lg-thinq-config.mjs')).protectLGThinQConfig(value, options) },
+  'home-assistant-sensor': { metadata: ['origin', 'entityId', 'measurement', 'certificatePin', 'timeoutMs'], certificate: 'certificate', secrets: [['token', 'Home Assistant token', 4096]], protect: async (value, options) => (await import('../lib/adapters/home-assistant-sensor-config.mjs')).protectHASensorConfig(value, options) },
+  openhab: { metadata: ['origin', 'certificatePin', 'itemName', 'itemType', 'timeoutMs'], certificate: 'certificate', secrets: [['token', 'openHAB API token', 4096]], protect: async (value, options) => (await import('../lib/adapters/openhab-config.mjs')).protectOpenHABConfig(value, options) },
+  plex: { metadata: ['origin', 'certificatePin', 'machineIdentifier', 'timeoutMs'], certificate: 'certificate', secrets: [], protect: async (value, options) => (await import('../lib/adapters/plex-config.mjs')).protectPlexConfig(value, options) },
+  awair: { metadata: ['vendorDeviceId', 'deviceType', 'timeoutMs'], secrets: [['token', 'Awair token', 4096]], protect: async (value, options) => (await import('../lib/adapters/awair-config.mjs')).protectAwairConfig(value, options) },
+  purpleair: { metadata: ['vendorDeviceId', 'timeoutMs'], secrets: [['apiKey', 'PurpleAir read API key', 4096]], protect: async (value, options) => (await import('../lib/adapters/purpleair-config.mjs')).protectPurpleAirConfig(value, options) },
+};
 function record(value, allowed) {
   if (!value || typeof value !== 'object' || types.isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype || Object.getOwnPropertySymbols(value).length) fail();
   const descriptors = Object.getOwnPropertyDescriptors(value);
@@ -18,7 +32,7 @@ function record(value, allowed) {
 }
 function options(value) {
   record(value, ['adapter', 'target', 'home', 'out']);
-  if (!ADAPTERS.includes(value.adapter) || ['target', 'home', 'out'].some(key => typeof value[key] !== 'string' || !value[key] || value[key].length > 32768 || value[key].includes('\0')) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,100}\.local\.json$/.test(value.out)) fail();
+  if (typeof value.adapter !== 'string' || !Object.hasOwn(INTEGRATIONS, value.adapter) || ['target', 'home', 'out'].some(key => typeof value[key] !== 'string' || !value[key] || value[key].length > 32768 || value[key].includes('\0')) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,100}\.local\.json$/.test(value.out)) fail();
   return value;
 }
 export function parseEnrollmentArgs(args) {
@@ -79,27 +93,26 @@ async function certificate(file) {
 /** Trusted owner-side library flow; injected providers are for explicit fixtures. */
 export async function enrollIntegration(input, { prompt = readMaskedSecret, secretStore } = {}) {
   const selected = options(input), targetPath = path.resolve(selected.target);
+  const integration = INTEGRATIONS[selected.adapter];
   const target = await readJson(targetPath);
-  record(target, selected.adapter === 'home-assistant'
-    ? ['origin', 'entityId', 'certificateFile', 'certificatePin', 'timeoutMs']
-    : ['host', 'port', 'certificateFile', 'certificatePin', 'topic', 'measurement']);
-  if (typeof target.certificateFile !== 'string' || !target.certificateFile || target.certificateFile.includes('\0') || target.certificateFile.length > 32768) fail();
-  const pem = await certificate(path.resolve(path.dirname(targetPath), target.certificateFile));
+  record(target, [...integration.metadata, ...(integration.certificate ? ['certificateFile'] : [])]);
+  let pem;
+  if (integration.certificate) {
+    if (typeof target.certificateFile !== 'string' || !target.certificateFile || target.certificateFile.includes('\0') || target.certificateFile.length > 32768) fail();
+    pem = await certificate(path.resolve(path.dirname(targetPath), target.certificateFile));
+  }
   const home = await protectHubHome(selected.home, { secretStore }), output = path.join(home, selected.out);
   try { await lstat(output); fail('ENROLLMENT_FILE_EXISTS'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const { certificateFile: _file, ...metadata } = target;
   let clear, protectedConfig;
   try {
-    if (selected.adapter === 'home-assistant') {
-      clear = { ...metadata, certificate: pem, token: await prompt('Home Assistant token (hidden)', 4096) };
-      protectedConfig = await protectHomeAssistantConfig(clear, { secretStore });
-    } else {
-      clear = { ...metadata, certificatePem: pem, username: await prompt('MQTT username (hidden)', 256), password: await prompt('MQTT password (hidden)', 4096) };
-      protectedConfig = await protectMQTTConfig(clear, { secretStore });
-    }
+    clear = integration.prepare ? integration.prepare(metadata) : { ...metadata };
+    if (integration.certificate) clear[integration.certificate] = pem;
+    for (const [key, label, limit] of integration.secrets) clear[key] = await prompt(label + ' (hidden)', limit);
+    protectedConfig = await integration.protect(clear, { secretStore });
     await writePrivateJson(output, protectedConfig, { secretStore });
     return Object.freeze({ saved: true, adapter: selected.adapter, networkAccessed: false, enabled: false, granted: false });
-  } finally { if (clear) for (const key of ['token', 'username', 'password']) if (Object.hasOwn(clear, key)) clear[key] = ''; }
+  } finally { if (clear) for (const [key] of integration.secrets) if (Object.hasOwn(clear, key)) clear[key] = ''; }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

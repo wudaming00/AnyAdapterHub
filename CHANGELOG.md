@@ -15,6 +15,11 @@ This file records source changes. There is no published npm package or tagged re
 
 ### Adapters and optional features
 
+- Nine additional experimental fixed adapters: Hue, Shelly, SwitchBot, ThinQ, HA sensors, openHAB, Plex public identity, Awair and public PurpleAir sensors. No new mandatory dependencies or hardware claims.
+- Fixed per-vendor HTTPS route/header policies, source-time bounds for air data, selected ordinary-load switch capability, and optional owner-bound Hue bridge certificate identity.
+- Read-only defaults and masked purpose-bound credential enrollment across new adapters; Plex public identity deliberately collects no token.
+- Synchronous dispatch authorization now rejects asynchronous/non-void callbacks without executing thenable getters or sending a mutation.
+
 - Fixed reviewed registry with lazy LG/ECOVACS loading; no profile-supplied package or module execution.
 - Explicitly installed LG WebSocket transport and separately installed ECOVACS worker dependencies.
 - LG basic controls separated from opt-in observation/media enhancements.

@@ -1,10 +1,11 @@
 # Experimental HTTPS light and MQTT sensor adapters
 
-The fixed adapter registry contains two new experimental integrations:
+This guide covers two experimental integrations in the fixed adapter registry:
 `home-assistant` for **one selected HTTPS light**, and `mqtt-tls` for **one exact
 numeric subscription**. Neither has household hardware compatibility evidence.
 They do not enable all devices behind Home Assistant or a broker. The
 [50-entry candidate catalog](DEVICE_ROADMAP.md) describes later work separately.
+Nine additional experimental entries are documented in [common integrations](COMMON_ADAPTERS.md).
 
 Production enrollment uses Windows CurrentUser DPAPI. A portable test provider
 is not a production fallback. Owners choose the target and certificate trust,

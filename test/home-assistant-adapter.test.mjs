@@ -43,6 +43,16 @@ test('HA constructor/listeners are inert and projected state excludes entity, na
   assert.equal(Object.isFrozen(snapshot.fields.light.value), true); cancel();
 });
 
+test('HA refuses asynchronous or non-void dispatch authorization before writes without executing then getters', async t => {
+  let touched=0;
+  for(const assertDispatch of [async()=>{},async()=>{throw new Error('private denial');},()=>true,()=>({get then(){touched++;return()=>{};}}),()=>new Proxy({},{get(){touched++;}})]){
+    const f=await fixture(t);
+    await assert.rejects(f.adapter.execute({action:'light.power.set',args:{on:true}},{assertDispatch}),{code:'INVALID_CONTEXT'});
+    assert.equal(f.calls.filter(call=>call.method==='POST').length,0);
+  }
+  await nextTurn();assert.equal(touched,0);
+});
+
 test('HA constructor rejects executable, inherited and unknown outer options without evaluating accessors or proxy traps', async t => {
   const { config } = await fixture(t); let touched = false;
   const valid = { deviceId: 'fixture-light', config, request: async () => state() };

@@ -21,12 +21,13 @@ Read [setup](GETTING_STARTED.md), [API/SDK](API.md),
 | Add a vendor, protocol, new action or privileged mechanism | Adapter source contribution | Fixed registry/config/policy changes, offline tests, dependency/license review and evidence. |
 | Make setup or device cards easier to use | Client/UI contribution | Reuse the existing API and authorization boundaries; a visual template cannot enroll a device or expand a grant. |
 
-The current catalog contains `lg-webos`, `ecovacs-x11`, experimental
-`home-assistant` (one HTTPS light) and experimental `mqtt-tls` (one numeric
-subscription). The latter two have no hardware compatibility evidence. The Hub
+The current fixed catalog contains 13 entries, enumerated by the inert `adapters`
+command. Alongside LG/ECOVACS, HA light and MQTT, [common integrations](COMMON_ADAPTERS.md)
+documents Hue, Shelly, SwitchBot, ThinQ, HA sensors, openHAB, Plex, Awair and
+PurpleAir. These new integrations have no household hardware compatibility evidence. The Hub
 is not a generic plugin installer. Profiles cannot supply module paths, package names, scripts,
 protocol endpoints or permissions. The profile schema currently accepts LG only;
-the ECOVACS adapter is registered in code. Do not invent an LG-shaped profile
+non-LG adapters are registered in code. Do not invent an LG-shaped profile
 or firmware value for another vendor.
 
 Inspect public source and these inert commands first:

@@ -41,6 +41,13 @@ optional dependency. The [50-entry catalog](docs/DEVICE_ROADMAP.md) separates
 these implemented experimental scopes from later candidates and deferred
 interfaces.
 
+The fixed source catalog now has **13 adapter entries**. Nine additional
+experimental integrations cover Hue lights, Shelly ordinary-load switches,
+SwitchBot, ThinQ, HA sensors, openHAB, Plex identity, Awair and public PurpleAir
+sensors. [Common integrations](docs/COMMON_ADAPTERS.md) lists exact behavior,
+owner enrollment, credentials and limits. Most are read-only; this is source
+support with offline fixtures, not hardware verification for those brands.
+
 ## Start the core
 
 From a new Windows PowerShell checkout:

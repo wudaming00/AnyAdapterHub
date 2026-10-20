@@ -32,7 +32,18 @@ implementation of the MQTT standard, not a hardware-vendor SDK or a compatibilit
 endorsement for every MQTT publisher. The Home Assistant HTTPS adapter uses Node
 built-ins and its documented REST API without a new vendor SDK dependency.
 
-## Optional ECOVACS bridge
+## Additional API adapters
+
+The additional Hue, Shelly, openHAB, Plex, HA-sensor, SwitchBot, ThinQ, Awair
+and PurpleAir adapters use Node built-ins and add no third-party runtime SDK.
+Their API/schema research references are recorded in the individual guides
+linked from [common integrations](docs/COMMON_ADAPTERS.md). The detailed Hue
+contract references the [OpenHue API schema at an immutable revision](https://github.com/openhue/openhue-api/tree/1ffc817857abf456d5ff2ae50400ef768dbce28e),
+an Apache-2.0 community project. No generated OpenHue SDK, vendor SDK source,
+application key or bundled credentials are copied into this package. Existing
+optional-component notices still apply.
+
+## Optional ECOVACS worker
 
 The JavaScript hub and adapter are MIT licensed. The separately executed
 `optional/ecovacs/worker.py` is GPL-3.0-or-later and imports the separately

@@ -135,6 +135,39 @@ Alerts **#10–#14** identify intended file/network transitions with the followi
 - **#12/#13, `lib/ssap.mjs`:** owner-selected local configuration supplies port/transport and a saved pairing key for reconnect or explicit pairing. Host/port validation, fixed WS(S) construction and disabled redirects constrain the destination. The optional bundled legacy compatibility manifest is SHA-256 checked by the CLI and shape-checked before registration. Sending a pairing key to its selected TV is expected protocol I/O; failure to authenticate the TLS peer is still a genuine separate risk. Same-user modification of owner configuration is not prevented by these checks.
 - **#14, `device-hub.mjs`:** `observe --out` deliberately exports a frame from the authenticated loopback Hub. The output path comes from the local CLI option, is resolved locally and is opened with `wx` and POSIX mode `0600`; the network response supplies image bytes, not its destination filename. Existing files are not overwritten. Windows export-directory ACLs, parent-directory integrity and retention of explicitly exported images remain owner responsibilities; this export is outside Hub frame expiry.
 
+## Common-adapter CodeQL triage (2026-10-20)
+
+PR #6's first scan reported alerts
+[#21](https://github.com/wudaming00/AnyAdapterHub/security/code-scanning/21) and
+[#22](https://github.com/wudaming00/AnyAdapterHub/security/code-scanning/22) for
+SHA-256 in the Shelly client and synthetic server verifier. Independent review
+confirmed these are the wire primitives required by
+[Shelly authentication](https://shelly-api-docs.shelly.cloud/gen2/General/Authentication/)
+and [RFC 7616 section 3.4](https://www.rfc-editor.org/rfc/rfc7616.html#section-3.4),
+not an application password-storage scheme. HA1 is transient; it is not saved or
+sent as the verifier. Production saved credentials use target/purpose-bound
+Windows CurrentUser DPAPI. Replacing the protocol primitive with a slow password
+KDF would break authentication. Tests verify the Digest response and reject
+plaintext passwords or HA1 in its header. Digest still requires verified pinned
+TLS; this finding does not endorse SHA-256 for password storage. Any per-alert
+false-positive dismissal records this rationale in GitHub; no query/path
+exclusion or source suppression is introduced.
+
+Alert [#23](https://github.com/wudaming00/AnyAdapterHub/security/code-scanning/23)
+traces a missing-file fixture into `readJson`. Its read-only numeric open flags
+cannot create a file; the query modeled an omitted creation mode as insecure.
+The reader is additionally hardened to open first with nonblocking/no-follow
+flags, verify a regular, single-link handle and its current pathname before
+reading, and check the POSIX owner where available. Windows enrolled-home ACL
+protection is a separate boundary; each `readJson` call does not verify a Windows
+owner SID. The reader specifies a private mode; Node ignores it without file
+creation flags. Missing paths, substituted paths, links and POSIX FIFOs have
+bounded denial regressions. The missing-file fixture now uses its own unique
+temporary directory. These checks preserve the trusted ancestor-directory
+assumption and do not defend against a compromised same-user process. A passing
+CodeQL workflow alone still does not establish a clean alert check or hardware
+security; inspect both the rescan and individual alert outcomes.
+
 ## Release and adapter checklist
 
 - Review the actual diff, action registry, device binding, grant/deadline behavior, targets and cleanup ownership. Higher-impact actions need separate review, not reuse of a generic switch/navigation capability.
