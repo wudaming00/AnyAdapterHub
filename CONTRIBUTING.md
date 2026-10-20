@@ -39,11 +39,12 @@ node device-hub.mjs adapters
 ```
 
 This installs the core without vendor SDKs and makes no device connection.
-Install the pinned LG test dependency explicitly before the complete JavaScript
+Install the pinned LG and MQTT test dependencies explicitly before the complete JavaScript
 suite:
 
 ```sh
 npm run adapter:lg:install
+npm run adapter:mqtt:install
 npm test
 npm run check:profiles
 npm run check:package

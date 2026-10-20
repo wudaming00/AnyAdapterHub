@@ -2,7 +2,7 @@
 
 简称 **AnyAdapter**。让 Agent 在用户明确授权的范围内连接、观察和控制家庭设备，并区分“请求已接受”和“效果已确认”。它是独立运行的本地中枢，使用 HTTPS、SSE 和 JavaScript SDK；Collie 等 Agent 可以作为客户端，MCP 仅保留为早期可选入口。
 
-[English](README.md) · [文档目录](docs/README.md) · [安装接入](docs/GETTING_STARTED.md) · [设备支持](docs/SUPPORTED_DEVICES.md) · [贡献指南](CONTRIBUTING.md)
+[English](README.md) · [文档目录](docs/README.md) · [安装接入](docs/GETTING_STARTED.md) · [设备支持](docs/SUPPORTED_DEVICES.md) · [50 项候选](docs/DEVICE_ROADMAP.md) · [贡献指南](CONTRIBUTING.md)
 
 **开发预览。** 当前实机部署要求 Windows、Node.js 22.13+ 和带 OpenSSL 的 Git for Windows。通信凭据使用 Windows 当前用户 DPAPI 加密，中枢只监听固定证书的本机 HTTPS。Linux/macOS 尚无生产密钥存储后端，会明确拒绝实机初始化；跨平台测试通过不代表实机部署已受支持。尚未完成独立安全审计，npm 发布保持禁用。
 
@@ -28,8 +28,13 @@ Windows、Linux 和 macOS 共享协议、权限、状态和 API；操作系统�
 | LG OLED65B8PUA，固件 `05.50.70`，webOS release `4.4.3` | 已完成首次证书登记、部分固定证书控制和视觉播放工作流的[实机复测](docs/evidence/lg-b8-workflow-2026-10-19.md)。旧记录覆盖部分媒体功能，其他型号／固件未验证。 |
 | B8 临时画面观察 | 历史实测取得 1920×1080 JPEG 和系统播放器状态。需精确型号／固件、本地 opt-in 及独立授权。旧局域网回传尚未加密，默认关闭；不提供 Disney+ DOM 或可信片名。 |
 | ECOVACS DEEBOT X11 OmniCyclone | US ECOVACS HOME、Windows、既有加密登录。中枢只读状态与详情已实测；运动控制只有离线测试，固件未知。 |
+| 实验性 Home Assistant | 固定 HTTPS 和一个 `light.*` 实体，默认只读；开关、调光需启用功能并单独授权。回读仅代表 HA 报告的状态，硬件尚未验证。 |
+| 实验性 MQTT/TLS | 一个固定证书的本地 broker、精确主题和数值测量，只订阅、不发布；不自动兼容 Tasmota/Zigbee2MQTT，硬件尚未验证。 |
 
 详见[支持矩阵](docs/SUPPORTED_DEVICES.md)及其证据链接。协议相似、测试通过或有人提交报告，都不能自动扩展为另一台设备已受支持。
+
+[50 项设备集成路线图](docs/DEVICE_ROADMAP.md)列出官方或社区接口、开发优先级与限制。
+首批两条新接入的本地隐藏凭据录入、加密保存和授权步骤见[实验适配器指南](docs/POPULAR_ADAPTERS.md)。
 
 ## 先启动核心
 
