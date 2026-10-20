@@ -16,13 +16,15 @@ Read [setup](GETTING_STARTED.md), [API/SDK](API.md),
 
 | User outcome | Work type | Smallest appropriate change |
 | --- | --- | --- |
-| Connect an owned device through `lg-webos` or `ecovacs-x11` | Local enrollment | Owner-selected configuration, pairing/account consent, narrow grant; no public code or approval required. |
+| Connect an owned device through a registered adapter | Local enrollment | Owner-selected configuration, pairing/account consent, narrow grant; no public code or approval required. Preserve each adapter's experimental and hardware-evidence limits. |
 | Report another LG model/firmware using implemented behavior | Compatibility/profile contribution | Exact-identity JSON and sanitized evidence; no executable protocol behavior. |
 | Add a vendor, protocol, new action or privileged mechanism | Adapter source contribution | Fixed registry/config/policy changes, offline tests, dependency/license review and evidence. |
 | Make setup or device cards easier to use | Client/UI contribution | Reuse the existing API and authorization boundaries; a visual template cannot enroll a device or expand a grant. |
 
-The current catalog contains `lg-webos` and `ecovacs-x11`. It is not a generic
-plugin installer. Profiles cannot supply module paths, package names, scripts,
+The current catalog contains `lg-webos`, `ecovacs-x11`, experimental
+`home-assistant` (one HTTPS light) and experimental `mqtt-tls` (one numeric
+subscription). The latter two have no hardware compatibility evidence. The Hub
+is not a generic plugin installer. Profiles cannot supply module paths, package names, scripts,
 protocol endpoints or permissions. The profile schema currently accepts LG only;
 the ECOVACS adapter is registered in code. Do not invent an LG-shaped profile
 or firmware value for another vendor.
@@ -47,6 +49,21 @@ Use an existing adapter before proposing new code. Follow
 for LG and [the ECOVACS prerequisites](ECOVACS_X11.md) for the optional worker.
 ECOVACS requires an existing documented local enrollment; a general account
 login wizard is not implemented.
+
+For the experimental HA/MQTT paths, use the owner-only
+[masked enrollment guide](POPULAR_ADAPTERS.md). The trusted local helper reads
+authentication values from its masked terminal prompt and writes an encrypted
+configuration; never pass them as arguments, target JSON fields, environment
+variables or model messages. `init`/`add --adapter ... --config FILE` imports a
+reference to that enrolled file; it does not pair a device or issue a grant.
+HA defaults to read-only; `control` enables `light.power.set`, and `dimming`
+additionally enables `light.brightness.set`. Both also need the exact client
+grant. MQTT has no action capability or publish path and requires separately
+chosen installation of its pinned optional SDK.
+Both new transports fail closed when unsafe `DEBUG`, `NODE_DEBUG` or
+`NODE_DEBUG_NATIVE` diagnostics are configured. Clear those settings before
+starting; do not print their values, enable secret-bearing packet logs or ask
+the owner to paste them.
 
 The decisions remain distinct: install the selected dependency, enable its
 adapter, enroll one selected device, choose optional features, and issue a
@@ -243,6 +260,15 @@ executable community profile. Consequential classes such as locks, heat or
 cameras require their own capability/privacy design. Optional observation must
 retain its cleanup/restoration contract; a different capture mechanism may need
 a reviewed runtime contract rather than simulated overlay success flags.
+
+The HA adapter must remain on its enrolled origin, certificate and one
+`light.*` entity; only the fixed light setters are implemented. Its confirmation
+is HA-reported state, not authenticated physical feedback. The MQTT adapter
+subscribes to one exact topic and accepts a bounded numeric payload for one
+fixed measurement. It rejects retained messages, but a fresh broker delivery
+still does not prove when a physical sensor sampled it. It does not implement
+Tasmota, Zigbee2MQTT, ESPHome discovery or any generic device command protocol.
+See [the protocol-specific scope](POPULAR_ADAPTERS.md) before extending either.
 
 Useful regression starting points include
 [policy tests](../test/hub-policy.test.mjs),

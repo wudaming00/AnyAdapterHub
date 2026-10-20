@@ -1,6 +1,6 @@
 # Supported devices
 
-AnyAdapter Hub aims to give agents a consistent way to control devices and observe results. Support is established for an **exact model, firmware and capability**, not an entire brand. This page describes the repository as of 2026-10-19; roadmap entries are not implemented integrations.
+AnyAdapter Hub aims to give agents a consistent way to control devices and observe results. Support is established for an **exact model, firmware and capability**, not an entire brand. This page describes the repository as of 2026-10-20; roadmap entries are not implemented integrations.
 
 ## Current compatibility
 
@@ -9,6 +9,8 @@ AnyAdapter Hub aims to give agents a consistent way to control devices and obser
 | **LG OLED65B8PUA** | **05.50.70**; device reports webOS release 4.4.3 | One physical television validated. See the capability limits below. |
 | Other LG webOS televisions, including other B8 sizes or regional variants | No reviewed exact model/firmware profile | Unverified. Similar protocols do not establish compatibility; the temporary observer must not be enabled by family resemblance. |
 | **ECOVACS DEEBOT X11 OmniCyclone** | US ECOVACS HOME, cloud class `huhcip`; firmware unknown; Windows current-user DPAPI enrollment | Experimental optional adapter. State and details were read on hardware through the Hub; movement controls have only offline tests. |
+| Experimental **Home Assistant HTTPS light** | One enrolled HTTPS origin, certificate and `light.*` entity; optional control/dimming features | Implemented experimental software scope; no physical light, vendor, HA installation or firmware has been hardware verified here. |
+| Experimental **MQTT/TLS numeric sensor** | One enrolled local TLS broker, exact topic and fixed measurement; optional MQTT.js installation | Implemented read-only MQTT 5 scope; no broker/device combination or publisher-specific hardware protocol has been hardware verified here. |
 | Other manufacturers and protocols below | No hardware validation in this repository | Roadmap only. |
 
 The reviewed LG profile is [lg-oled65b8pua-webos4.json](../profiles/lg-oled65b8pua-webos4.json). Its `verified`, `unverified` and `unsupported` labels describe test evidence; they do not grant a client permission to operate the device.
@@ -62,6 +64,22 @@ The [read-only hardware evidence](evidence/ecovacs-x11-2026-10-19.md) covers the
 
 The adapter binds one owner-selected device and exposes no room cleaning, maps, floor plans, camera or station-service control. Maintenance values are counters, not measured wear; the bagless X11's dust-bag counter is not applicable. Review the guide's optional GPL-3.0-or-later worker/dependency notices and private configuration requirements before enabling it. Vacuum grants are separate from TV grants.
 
+## Experimental HTTPS light and MQTT sensor adapters
+
+The [owner setup guide](POPULAR_ADAPTERS.md) describes masked credential
+enrollment, explicit dependency installation, encrypted configuration references,
+features and grants. These software paths do not add new hardware evidence.
+
+| Adapter | Implemented scope | Evidence limit |
+| --- | --- | --- |
+| `home-assistant` | Selected light state; read-only by default. `control` and the exact grant enable `light.power.set`; `dimming` plus `control` and its grant enable `light.brightness.set` (0–100). Fixed HTTPS REST routes, exact entity and enrolled certificate. | Readback confirms only HA's reported entity state. It does not prove physical light output or make every device behind HA supported. No arbitrary service, script, template, switch, HVAC or camera access. |
+| `mqtt-tls` | MQTT 5 subscription to one exact topic over pinned TLS, username/password held in DPAPI storage; bounded scalar measurements, no writes. | Retained messages are rejected; receipt age is not sensor sampling age. Broker authentication does not independently authenticate the publishing device. Tasmota/Zigbee2MQTT/ESPHome discovery or payload protocols are not implemented. |
+
+Both remain unverified on household hardware. A test fixture or successful
+broker/HA connection must not be recorded as exact device compatibility.
+Changed trust, unsupported TLS or missing credentials fail closed rather than
+enabling legacy plaintext paths.
+
 ## Proposed next integrations
 
 These are implementation directions based on documented interfaces, **not a supported-device list or delivery commitment**. Exact hardware, firmware, authorization and result verification are still required.
@@ -70,10 +88,14 @@ These are implementation directions based on documented interfaces, **not a supp
 | --- | --- | --- |
 | 1 | Philips Hue Bridge and selected lights | Local light state, explicit on/off and bounded brightness. Hue documents local resource control and a physical bridge-button authorization step. Start with one lamp, not whole-home scenes. [Official API introduction](https://developers.meethue.com/develop/get-started-2/). |
 | 1 | Shelly Gen2+ switches/plugs | Local `Switch.GetStatus` and explicit `Switch.Set`; begin with a lamp or other noncritical load. Shelly documents JSON-RPC commands, responses and notifications. Do not expose its general RPC, scripting, reset or network-configuration methods. [RPC protocol](https://shelly-api-docs.shelly.cloud/gen2/General/RPCProtocol/), [Switch component](https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/Switch/). |
-| 2 | Home Assistant bridge | A reviewed allowlist of individual light/switch/sensor entities and actions, using documented authenticated REST and WebSocket interfaces. Do not forward arbitrary services, templates or events; the underlying credential can have broader access than the AnyAdapter Hub client. [REST API](https://developers.home-assistant.io/docs/api/rest/), [WebSocket API](https://developers.home-assistant.io/docs/api/websocket/). |
+| 2 | Wider Home Assistant bridge | The implemented experimental path above covers one HTTPS light. Additional switch/sensor domains or WebSocket behavior need their own bounded schema and review; the HA credential may have broader rights than the Hub client. [REST API](https://developers.home-assistant.io/docs/api/rest/), [WebSocket API](https://developers.home-assistant.io/docs/api/websocket/). |
 | 2 | Matter, initially through Home Assistant | Reuse an existing controller's owner-approved commissioning; start with lights, plugs and read-only sensors. Matter support does not make every feature of every device available. Thread devices need suitable border-router infrastructure; local IPv6/mDNS matters. Native AnyAdapter Hub commissioning is not implemented. [Home Assistant Matter guide](https://www.home-assistant.io/integrations/matter/). |
 | 3 | Android TV / Fire TV through ADB | Selected keys, app launch and limited state/observation on an explicitly authorized device. Debug access is broad, so expose fixed reviewed actions rather than an agent shell. Compatibility and protected-screen behavior need per-device tests. [Android ADB documentation](https://developer.android.com/tools/adb), [Home Assistant ADB integration](https://www.home-assistant.io/integrations/androidtv/). |
 
 Fans, air purifiers and read-only appliance telemetry are reasonable later candidates. Heating, motorized movement and other consequential actions need device-specific limits. Locks, alarms, cameras, cooking appliances and critical electrical loads are outside the initial lights/plugs scope; adding them requires a separate capability and privacy/safety review.
+
+The [50-integration candidate catalog](DEVICE_ROADMAP.md) records official versus
+community sources, encrypted-transport constraints and proposed bounded scopes.
+It is a planning catalog, not a list of 50 supported brands or devices.
 
 To add evidence or an adapter, follow [adapter requirements](ADAPTER_REQUIREMENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).

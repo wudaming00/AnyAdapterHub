@@ -20,6 +20,9 @@ This file records source changes. There is no published npm package or tagged re
 - LG basic controls separated from opt-in observation/media enhancements.
 - Exact-model JSON profiles, sanitized evidence and conservative capability status.
 - Experimental Windows/US ECOVACS X11 state/details integration; movement has offline tests only.
+- Experimental Home Assistant HTTPS selected-light adapter, read-only defaults and separately gated explicit power/brightness setters.
+- Optional MQTT.js 5.16.1 TLS adapter for one exact numeric sensor subscription; no publish capability or vendor payload passthrough.
+- Owner-only masked terminal enrollment for both integrations, purpose-bound encrypted credentials and fixed certificate identity. Neither new adapter has household hardware evidence.
 
 ### Credential and transport changes
 

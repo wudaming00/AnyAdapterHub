@@ -13,7 +13,7 @@ const loader = new URL('./fixtures/block-ws-loader.mjs', import.meta.url).href;
 
 test('reviewed adapter catalog is immutable and cannot supply executable extensions', () => {
   const catalog = adapterMetadata();
-  assert.deepEqual(catalog.map(item => item.id), ['lg-webos', 'ecovacs-x11']);
+  assert.deepEqual(catalog.map(item => item.id), ['lg-webos', 'ecovacs-x11', 'home-assistant', 'mqtt-tls']);
   assert.ok(Object.isFrozen(catalog));
   assert.ok(Object.isFrozen(catalog[0].features));
   assert.throws(() => catalog[0].features.push('shell'));
@@ -50,7 +50,7 @@ test('core import and CLI help work without ws; selecting LG gives an actionable
   const source = `
     import assert from 'node:assert/strict';
     const { adapterMetadata, createAdapter } = await import('./lib/hub/adapters.mjs');
-    assert.equal(adapterMetadata().length, 2);
+    assert.equal(adapterMetadata().length, 4);
     await assert.rejects(createAdapter({adapterName:'lg-webos',id:'fixture-tv',config:{}}), {
       code:'ADAPTER_DEPENDENCY_MISSING',
       message:'LG webOS is optional. Run npm run adapter:lg:install before enabling it.'
@@ -78,5 +78,10 @@ test('root dependency metadata requires explicit LG selection', async () => {
   assert.equal(manifest.peerDependenciesMeta.ws.optional, true);
   assert.equal(lock.packages[''].dependencies?.ws, undefined);
   assert.equal(lock.packages['node_modules/ws'], undefined);
-  assert.equal(manifest.scripts['adapter:lg:install'], 'npm install --no-save --package-lock=false --ignore-scripts ws@8.22.0');
+  assert.equal(manifest.scripts['adapter:lg:install'], 'npm install --save-peer --save-exact --package-lock=false --ignore-scripts ws@8.22.0');
+  assert.equal(manifest.peerDependencies.mqtt, '5.16.1');
+  assert.equal(manifest.peerDependenciesMeta.mqtt.optional, true);
+  assert.deepEqual(lock.packages[''].peerDependencies, manifest.peerDependencies);
+  assert.deepEqual(lock.packages[''].peerDependenciesMeta, manifest.peerDependenciesMeta);
+  assert.equal(lock.packages['node_modules/mqtt'], undefined);
 });

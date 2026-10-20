@@ -15,6 +15,7 @@ AnyAdapter Hub is a source-distributed development preview. Read the setup and s
 | One-request Disney+ playback with an attached visual agent | [Movie workflow](MOVIE_WORKFLOW.md) |
 | Missing dependencies, denied access, standby and certificate failures | [Troubleshooting](TROUBLESHOOTING.md) |
 | Exact hardware/firmware and verification limits | [Supported devices](SUPPORTED_DEVICES.md) |
+| Experimental HTTPS light and MQTT numeric sensor enrollment | [Popular adapters](POPULAR_ADAPTERS.md) |
 | Optional ECOVACS cloud worker and existing enrollment prerequisite | [ECOVACS X11](ECOVACS_X11.md) |
 | Optional component installation | [LG transport](../optional/lg-webos/README.md), [ECOVACS worker](../optional/ecovacs/README.md) |
 
@@ -35,6 +36,7 @@ Live production secret storage is currently Windows-only. Portable fixture tests
 | Security boundaries and private reporting | [Security policy](../SECURITY.md) |
 | Threat review, negative tests and remaining findings | [Security review](SECURITY_REVIEW.md) |
 | Planned integrations and acceptance criteria | [Roadmap](ROADMAP.md) |
+| 50 researched integration candidates and priorities | [Device candidate catalog](DEVICE_ROADMAP.md) |
 | Review, release and maintenance checklist | [Maintaining](MAINTAINING.md) |
 | Source changes and known limits | [Changelog](../CHANGELOG.md) |
 | Existing ecosystem and positioning | [Related projects](RELATED_PROJECTS.md) |

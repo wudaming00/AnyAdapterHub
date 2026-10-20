@@ -16,13 +16,18 @@
     "check:package": "node scripts/check-package.mjs",
     "check": "npm test && npm run check:profiles && npm run check:docs && npm run check:package && npm run check:public",
     "check:public": "node scripts/check-public.mjs",
-    "adapter:lg:install": "npm install --no-save --package-lock=false --ignore-scripts ws@8.22.0"
+    "adapter:lg:install": "npm install --save-peer --save-exact --package-lock=false --ignore-scripts ws@8.22.0",
+    "adapter:mqtt:install": "npm install --save-peer --save-exact --package-lock=false --ignore-scripts mqtt@5.16.1"
   },
   "peerDependencies": {
+    "mqtt": "5.16.1",
     "ws": "8.22.0"
   },
   "peerDependenciesMeta": {
     "ws": {
+      "optional": true
+    },
+    "mqtt": {
       "optional": true
     }
   },

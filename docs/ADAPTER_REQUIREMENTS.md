@@ -21,7 +21,7 @@ Production callers use `createAdapter({adapterName,id,config,features})` from
 
 | Member | Runtime use and required behavior |
 | --- | --- |
-| `supportedActions: readonly string[]` | Explicit, unique IDs from `ACTIONS`, restricted to this adapter and its enabled features. Contributors must supply it; do not rely on the runtime's legacy all-actions fallback. |
+| `supportedActions: readonly string[]` | Explicit, unique IDs from `ACTIONS`, restricted to this adapter and its enabled features. `[]` describes an adapter with no action capabilities, such as a read-only sensor. Contributors must supply the list; do not rely on the runtime's legacy all-actions fallback. |
 | `subscribe(onEvent) => cancel` | Register a local state listener synchronously and return an unsubscribe function. Do not start an upstream connection as a side effect of listener registration. |
 | `start({pollMs}) => Promise<unknown>` | Begin bounded, non-overlapping state refresh. The runtime supplies its requested interval; respect stricter vendor limits. Publish projected state and retain expiry on failure. |
 | `execute({action,args}, context) => Promise<result>` | Execute one fixed non-observation action through the shared device queue, with strict arguments, dispatch authorization, readback and conservative results. |
@@ -29,7 +29,7 @@ Production callers use `createAdapter({adapterName,id,config,features})` from
 | `close() => Promise<void>` | Stop polls, reject new work, await active work/cleanup, unsubscribe and release owned resources. |
 
 `adapterId` is useful descriptive metadata. `identity()` (LG) and `snapshot()`
-(both current adapters) are implementation utilities; the Hub does not call them
+(where implemented) are implementation utilities; the Hub does not call them
 as required generic methods. ECOVACS publishes state through `start()` and `subscribe()` and
 does not implement `observe()`. `readonlyActions` metadata does not replace an
 exact Hub grant; an action such as `app.list` still needs its own capability.
@@ -134,8 +134,27 @@ may be broader than a scoped client; the adapter must enforce the narrow scope.
 Do not expose generic shell, HTTP/RPC/MQTT/Luna/ADB passthrough, arbitrary launch
 parameters, arbitrary services or executable community scripts. In LG, ordinary
 app launch must not reach the privileged observer overlay. Future Home Assistant
-or ADB integrations need fixed entity/action/command allowlists; neither is
-implemented merely by mentioning it in a profile.
+expansions or ADB integrations need fixed entity/action/command allowlists;
+mentioning them in a profile cannot implement or authorize them. The current
+experimental HA path covers one enrolled HTTPS light only; it does not expose
+arbitrary HA services, switches, sensors, scripts or templates.
+
+The experimental `home-assistant` adapter advertises no actions by default.
+Its `control` feature adds `light.power.set` with `{on:boolean}`; `dimming`
+requires `control` and adds `light.brightness.set` with an integer 0–100. Each
+action still needs its own device-scoped grant. Read back the same entity and
+report the `home_assistant_reported_selected_entity_state` verification scope;
+`physicalEffectVerified` stays false. Certificate validation/pinning and the
+post-preparation dispatch check must precede HTTP credential/action bytes.
+
+The experimental `mqtt-tls` adapter has `supportedActions:[]` and no publish
+method exposed through the Hub. It binds one literal private/local broker,
+port, certificate pin, exact topic and fixed numeric measurement. MQTT 5 receipt
+TTL is broker evidence rather than sensor sampling time; reject retained,
+foreign-topic, malformed and out-of-range payloads without freshening evidence.
+Supporting MQTT transport does not establish direct hardware support for
+Tasmota, Zigbee2MQTT or another publisher. Their message contracts and device
+evidence require separate work. See [the enrollment and limits](POPULAR_ADAPTERS.md).
 
 For media, validate approved real paths and serve the same checked open handle.
 Bound listeners to the selected target and lifetime. Network fetch/callback code

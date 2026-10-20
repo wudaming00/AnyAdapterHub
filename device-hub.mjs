@@ -16,10 +16,11 @@ const HELP = `AnyAdapter Hub local device hub
   node device-hub.mjs init --tv-config FILE --host PRIVATE_IP [--id living-room-tv] [--port 8765]
   node device-hub.mjs init --ecovacs-config FILE [--id vacuum] [--port 8765]
   node device-hub.mjs add --ecovacs-config FILE [--id vacuum] [--home .device-hub]
+  node device-hub.mjs init|add --adapter home-assistant|mqtt-tls --config FILE --id ID
   node device-hub.mjs serve [--home .device-hub]
   node device-hub.mjs init [--home .device-hub]  (empty core, no adapters)
   node device-hub.mjs adapters
-  node device-hub.mjs enable|disable --adapter lg-webos|ecovacs-x11
+  node device-hub.mjs enable|disable --adapter ADAPTER
   node device-hub.mjs features --device ID --features observer,media  (empty string disables both)
   node device-hub.mjs migrate-security [--tv-config FILE] [--legacy-tv-config FILE]
   node device-hub.mjs stop [--home .device-hub]
@@ -42,7 +43,7 @@ serve uses pinned HTTPS on 127.0.0.1 only. It does not install OS startup tasks.
 `;
 function parse(argv) {
   const [command = 'help', ...rest] = argv; const options = {};
-  const allowed = ['home', 'tv-config', 'legacy-tv-config', 'ecovacs-config', 'host', 'id', 'label', 'port', 'credential', 'device', 'action', 'args', 'key', 'out', 'after', 'caps', 'hours', 'grant-id', 'adapter', 'features', 'title', 'year', 'decision'];
+  const allowed = ['home', 'tv-config', 'legacy-tv-config', 'ecovacs-config', 'config', 'host', 'id', 'label', 'port', 'credential', 'device', 'action', 'args', 'key', 'out', 'after', 'caps', 'hours', 'grant-id', 'adapter', 'features', 'title', 'year', 'decision'];
   for (let i = 0; i < rest.length; i += 2) {
     if (!rest[i].startsWith('--') || !allowed.includes(rest[i].slice(2)) || rest[i + 1] === undefined || Object.hasOwn(options, rest[i].slice(2))) throw new Error('Invalid arguments.');
     options[rest[i].slice(2)] = rest[i + 1];
@@ -79,7 +80,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   if (command === 'init' || command === 'add') {
     const enroll = command === 'init' ? initializeHub : addHubDevice;
-    process.stdout.write(JSON.stringify(await enroll({ home, tvConfigPath: options['tv-config'], ecovacsConfigPath: options['ecovacs-config'], host: options.host,
+    process.stdout.write(JSON.stringify(await enroll({ home, tvConfigPath: options['tv-config'], ecovacsConfigPath: options['ecovacs-config'], adapterName: options.adapter, configPath: options.config, host: options.host,
       id: options.id, label: options.label, features: options.features ? options.features.split(',') : [], port: options.port === undefined ? undefined : Number(options.port) })) + '\n'); return;
   }
   if (command === 'serve') {
