@@ -39,6 +39,14 @@ This file records source changes. There is no published npm package or tagged re
 - Explicit saved LG source-interface binding, one bounded read reconnect and pointer-only timeout recovery without mutation replay.
 - Shared secret-envelope validation separated from Windows DPAPI, private file permissions and fixed system-tool resolution; frozen platform metadata does not enable unimplemented providers.
 
+### Selected LG DLNA discovery
+
+- A `DLNAClient` with a selected host ignores other SSDP senders before parsing and fetches only that host's description and AVTransport schema. Description, base and used service URLs stay on the selected literal host; redirects and unrelated port probes are refused. The explicit general discovery scanner keeps its existing broader behavior.
+- One connected client reuses its validated service for status and supported fixed media actions. A new client still waits for the full 4.5-second SSDP response window; this change adds no cache between clients or persistent MCP controller.
+- SSDP requests remain multicast and unauthenticated. Legacy HTTP description, schema and SOAP traffic remains unencrypted and unauthenticated; source-address and URL checks do not prove a unique device identity.
+- The selected interface is bound for SSDP and discovery description/schema HTTP requests. This change does not extend interface binding to SOAP or the hosted media connection.
+- These are source changes, not evidence that an existing MCP process was redeployed or its media host released. Closing a DLNA client does not send Stop or close a media host owned by another process; those outcomes require separate verification.
+
 ### Documentation and checks
 
 - English/Chinese project and contribution entry points, setup/operations guides, API/SDK reference, troubleshooting, architecture and adapter contribution walkthrough.

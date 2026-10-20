@@ -161,11 +161,17 @@ function xmlText(xml, tag) {
   return chunks.join('').trim();
 }
 
-export function parseDescription(xml, location) {
+export function parseDescription(xml, location, expectedHost) {
   checkedXml(xml);
   if (!/<(?:[\w.-]+:)?root\b/i.test(xml) || !/<(?:[\w.-]+:)?device\b/i.test(xml)) throw new Error('Unsupported device description XML');
   const declaredBase = xmlText(xml, 'URLBase');
   const base = declaredBase ? new URL(declaredBase, location).href : location;
+  // Optional selected-device parsing tightens only its caller. General discovery
+  // keeps its existing descriptive semantics and explicit scan behavior.
+  if (expectedHost !== undefined) {
+    const selected = checkedLocalUrl(base, expectedHost);
+    if (selected.search || selected.hash) throw new Error('Selected descriptor URLBase must stay on the exact device.');
+  }
   const services = [...xmlElements(xml, 'service')].map(block => {
     const service = {};
     for (const field of ['serviceType', 'serviceId', 'SCPDURL', 'controlURL', 'eventSubURL']) {
