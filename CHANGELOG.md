@@ -26,10 +26,12 @@ This file records source changes. There is no published npm package or tagged re
 - Explicit rerunnable security migration, offline-TV pending enrollment and stop-before-migration checks.
 - Native/MSYS Git for Windows OpenSSL compatibility using fixed non-secret stdin configuration and RAM-only private-key output.
 - Bounded process diagnostics, cold DPAPI startup and SSE/TLS resource limits.
+- Shared secret-envelope validation separated from Windows DPAPI, private file permissions and fixed system-tool resolution; frozen platform metadata does not enable unimplemented providers.
 
 ### Documentation and checks
 
 - English/Chinese project and contribution entry points, setup/operations guides, API/SDK reference, troubleshooting, architecture and adapter contribution walkthrough.
+- One shared core and three platform distribution targets documented separately from current Windows-only production support and planned native packaging/UI.
 - Private vulnerability reporting and public issue/PR templates with evidence and privacy prompts.
 - Local documentation link/anchor validation, model/evidence checks, package/source privacy checks and Windows/Linux CI with security analysis.
 

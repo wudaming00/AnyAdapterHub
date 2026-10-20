@@ -35,7 +35,16 @@ flowchart LR
 | `lib/hub/adapters.mjs` | Metadata-only catalog and lazy imports of fixed reviewed implementations |
 | `lib/adapters/` | Selected protocol implementation, readback, freshness, target binding and cleanup |
 | `lib/security/` | Purpose-bound encrypted secrets, Hub TLS identity and LG certificate trust |
+| `lib/platform/` | OS credential protection, private storage permissions, fixed system tools and informational platform metadata |
 | `profiles/`, `lib/device-profile.mjs` | Exact model/firmware evidence data; no executable registration or permission grant |
+
+One shared application core serves three platform distribution targets:
+Windows, Linux and macOS. Protocols, policy and API behavior remain shared;
+credential protection and OS integration sit behind the platform boundary.
+Windows has the production provider today. Native installers, services and the
+shared graphical interface remain planned. See
+[platform architecture](PLATFORM_ARCHITECTURE.md) for implemented modules,
+deployment status and the requirements for another production provider.
 
 The owner selects local targets and configures upstream credentials. Scoped
 clients receive neither device credentials nor authority over other enrolled

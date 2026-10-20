@@ -6,6 +6,10 @@
 
 **开发预览。** 当前实机部署要求 Windows、Node.js 22.13+ 和带 OpenSSL 的 Git for Windows。通信凭据使用 Windows 当前用户 DPAPI 加密，中枢只监听固定证书的本机 HTTPS。Linux/macOS 尚无生产密钥存储后端，会明确拒绝实机初始化；跨平台测试通过不代表实机部署已受支持。尚未完成独立安全审计，npm 发布保持禁用。
 
+采用[一套共享核心、三个平台发行版](docs/PLATFORM_ARCHITECTURE.md)的架构方向。
+Windows、Linux 和 macOS 共享协议、权限、状态和 API；操作系统专用的安全实现已拆到平台层。
+三个原生安装包和统一图形界面仍待实现，当前实机支持范围仍是 Windows。
+
 ## 已实现什么
 
 - 本地 HTTPS 服务、按设备组织的状态、字段时效和 SSE 事件。

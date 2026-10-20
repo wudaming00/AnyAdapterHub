@@ -17,13 +17,14 @@ AnyAdapter Hub is a source-distributed development preview. Read the setup and s
 | Optional ECOVACS cloud worker and existing enrollment prerequisite | [ECOVACS X11](ECOVACS_X11.md) |
 | Optional component installation | [LG transport](../optional/lg-webos/README.md), [ECOVACS worker](../optional/ecovacs/README.md) |
 
-Live production secret storage is currently Windows-only. Linux/macOS CI uses explicitly injected test providers; it does not enable live deployment on those platforms. Core startup installs and connects no household device by itself.
+Live production secret storage is currently Windows-only. Portable fixture tests use explicitly injected test providers; they do not enable live deployment on Linux or macOS. Core startup installs and connects no household device by itself.
 
 ## Understand and contribute / 架构与贡献
 
 | Need | Guide |
 | --- | --- |
 | Components, data flow and actual adapter/runtime contract | [Architecture](ARCHITECTURE.md) |
+| One shared core, Windows/Linux/macOS boundaries and release targets | [Platform architecture](PLATFORM_ARCHITECTURE.md) |
 | Install → enable → enroll → features → grants | [Modular architecture](MODULAR_ARCHITECTURE.md) |
 | Development, tests and contribution review | [Contributing](../CONTRIBUTING.md) |
 | Local owner consent and independent reviewer agents | [Agent review policy](AGENT_REVIEW.md) |
