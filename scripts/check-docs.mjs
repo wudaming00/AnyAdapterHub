@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_LINK_CANDIDATES = 10000;
 const privatePath = /(?:^|\/)(?:node_modules|reports|captures|\.device-hub|\.git|\.venv|__pycache__|runtime|snapshots|work|outputs)(?:\/|$)|(?:^|\/)\.env(?:\.|$)|\.local\.json|\.(?:sqlite(?:-wal|-shm)?|db|pem|key|bin|log)$|LOCAL-LAB|(?:^|\/)probe-[^/]+|third_party\/slopbro\//i;
-const publicDocument = /^(?:(?:README|CONTRIBUTING|SECURITY|THIRD_PARTY_NOTICES|CHANGELOG)(?:\.[A-Za-z-]+)?\.md|docs\/[A-Za-z0-9_./-]+\.md|optional\/[A-Za-z0-9_-]+\/README\.md|\.github\/[A-Za-z0-9_./-]+\.md)$/;
+const publicDocument = /^(?:(?:AGENTS|README|CONTRIBUTING|SECURITY|THIRD_PARTY_NOTICES|CHANGELOG)(?:\.[A-Za-z-]+)?\.md|docs\/[A-Za-z0-9_./-]+\.md|optional\/[A-Za-z0-9_-]+\/README\.md|\.github\/[A-Za-z0-9_./-]+\.md)$/;
 const publicSource = /^(?:[A-Za-z0-9_.-]+|(?:\.github|lib|docs|profiles|schema|scripts|test|optional|integrations|third_party|privileged-probe)\/[A-Za-z0-9_./-]+)$/;
 const unescape = value => value.replace(/\\([\\`*{}\[\]()#+.!_<> -])/g, '$1');
 const entities = value => value.replace(/&(?:amp|quot|apos|lt|gt|#\d+|#x[\da-f]+);/gi, item => {
@@ -437,7 +437,7 @@ async function main() {
     inventory.add(match[2]); if (publicDocument.test(match[2])) documents.add(match[2]);
   }
   // Include only explicit public documentation/source trees, never ignored local files.
-  for (const name of git(['ls-files', '--others', '--exclude-standard', '-z', '--', 'docs', '.github', 'optional', 'scripts', 'README*.md', 'CONTRIBUTING*.md', 'SECURITY*.md', 'THIRD_PARTY_NOTICES*.md', 'CHANGELOG*.md'])) {
+  for (const name of git(['ls-files', '--others', '--exclude-standard', '-z', '--', 'docs', '.github', 'optional', 'scripts', 'AGENTS.md', 'README*.md', 'CONTRIBUTING*.md', 'SECURITY*.md', 'THIRD_PARTY_NOTICES*.md', 'CHANGELOG*.md'])) {
     if (!publicSource.test(name) || privatePath.test(name)) continue;
     inventory.add(name); if (publicDocument.test(name)) documents.add(name);
   }

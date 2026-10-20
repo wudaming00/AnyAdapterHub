@@ -74,8 +74,12 @@ instead of reporting only “tests passed.”
 
 Local pairing and authorization do not require a PR or public approval. Shared
 contributions use [independent agent review](docs/AGENT_REVIEW.md), with a second
-security reviewer for sensitive changes. Human participation is welcome but is
-not a mandatory second-account approval gate.
+security reviewer for sensitive changes. Required CI must pass and a designated
+repository administrator must approve the specific PR and final reviewed head
+SHA before merging. An implementation agent cannot replace that approval,
+bypass protection or automatically merge a PR. The policy describes the
+explicit administrator authorization needed when a sole administrator is also
+the PR author and GitHub self-approval is unavailable.
 
 Installation, adapter enablement, device enrollment, optional feature selection
 and client grants are separate decisions. Community profiles grant none of
@@ -104,4 +108,8 @@ Document dependency provenance and licenses. JavaScript core code is MIT; the
 optional ECOVACS worker and SDK have separate GPL-3.0-or-later terms. See
 [third-party notices](THIRD_PARTY_NOTICES.md). Submit a focused pull request with
 the provided template; the trusted publisher records the reviewer agents'
-findings and the actual CI results against the final commit before merging.
+findings and the actual CI results against the final commit. The repository
+administrator makes the final merge decision separately. A later commit needs
+fresh agent review, applicable checks and renewed administrator approval.
+Continuous cloud review and automatic administrator confirmation are not
+deployed; creating a PR or passing tests does not authorize an agent to merge it.

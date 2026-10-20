@@ -8,6 +8,7 @@ AnyAdapter Hub is a source-distributed development preview. Read the setup and s
 | --- | --- |
 | Project overview / 项目介绍 | [English README](../README.md), [中文 README](../README.zh-CN.md) |
 | First setup, empty core, LG pairing, read-only grant | [Get started](GETTING_STARTED.md) |
+| Proposed sign-in, device connection and themes | [Simple onboarding design](ONBOARDING_UX.md) |
 | Windows encryption, certificate trust and existing-install migration | [Secure setup](SECURE_SETUP.md) |
 | Start/stop, adapters, feature selection, grants, frames and recovery | [运行与维护 / Local Hub](LOCAL_HUB.md) |
 | API routes, schemas, SDK, events and error semantics | [API and SDK](API.md) |
@@ -27,6 +28,7 @@ Live production secret storage is currently Windows-only. Linux/macOS CI uses ex
 | Development, tests and contribution review | [Contributing](../CONTRIBUTING.md) |
 | Local owner consent and independent reviewer agents | [Agent review policy](AGENT_REVIEW.md) |
 | Step-by-step profile and adapter contribution | [Contributor guide](CONTRIBUTOR_GUIDE.md) |
+| Instructions and workflows for AI coding agents | [AI adapter handbook](AI_ADAPTER_GUIDE.md), [AGENTS.md](../AGENTS.md) |
 | Add a protocol adapter or exact-model report | [Adapter requirements](ADAPTER_REQUIREMENTS.md) |
 | Security boundaries and private reporting | [Security policy](../SECURITY.md) |
 | Threat review, negative tests and remaining findings | [Security review](SECURITY_REVIEW.md) |
