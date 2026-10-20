@@ -47,6 +47,15 @@ This file records source changes. There is no published npm package or tagged re
 - The selected interface is bound for SSDP and discovery description/schema HTTP requests. This change does not extend interface binding to SOAP or the hosted media connection.
 - These are source changes, not evidence that an existing MCP process was redeployed or its media host released. Closing a DLNA client does not send Stop or close a media host owned by another process; those outcomes require separate verification.
 
+### LG session control and local media cleanup
+
+- MCP reuses one controller in memory while reloading/decrypting the protected local configuration for every tool. Changes to credentials, identity or local policy invalidate the session and owned resources; failed cleanup prevents a replacement session. This is process lifetime reuse, not an OS startup service or a plaintext credential cache.
+- `tv_keyboard_state` returns immediate metadata by default. An explicit `waitMs` (0–30000) waits outside the effect queue; stdio keeps accepting bounded requests so navigation can produce real focus events. Effects remain serialized. EOF drains accepted work; broken output cancels pending dispatch and still closes owned resources.
+- Focus needs an actual boolean event, observed foreground, current generation and at most 1500 ms of age. Navigation, foreground changes and disconnects invalidate it. `text.insert` and `tv_type_text` fail immediately when focus is unknown rather than waiting and later inserting; known unsent Hub focus denials do not trigger a blocking status recovery. Dispatch authorization must finish synchronously before effects.
+- MCP `tv_apps` returns at most 256 IDs/titles. The Hub retains its existing bounded privacy-filtered `app.list`; neither projection replaces full internal metadata used for ordinary-app launch policy.
+- New independently granted Hub `text.focus.read` reads immediate focus metadata; optional media capability `media.host.release` and MCP `tv_release_media` close only listeners owned by that running instance, without TV discovery or a Stop request. They cannot release another process's listener or verify television playback. Existing grants are not expanded.
+- Listener cleanup has a bounded server-close wait, shares one close attempt and preserves failure on repeated calls. MCP retains failed resources for reconciliation and caps outstanding media hosts at two. Cleanup failure is not reported as success.
+
 ### Documentation and checks
 
 - English/Chinese project and contribution entry points, setup/operations guides, API/SDK reference, troubleshooting, architecture and adapter contribution walkthrough.

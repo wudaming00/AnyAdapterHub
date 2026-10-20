@@ -20,7 +20,7 @@ function fixture({ response, dlnaClient, pointerWebSocketFactory, subscribe } = 
   const ssapClient = { registered: false, timeoutMs: 500,
     async connect() { this.registered = true; }, close() { this.registered = false; }, sanitize: value => value,
     async request(uri, payload) { calls.push({ uri, payload }); return response?.(uri, payload) ?? { returnValue: true }; },
-    async subscribe(uri, payload, options) { return subscribe?.(options) ?? { unsubscribe() {} }; },
+    async subscribe(uri, payload, options) { return subscribe?.(options, uri) ?? { unsubscribe() {} }; },
   };
   const controller = new TVController({ host: HOST, ssapClient, dlnaClient, pointerWebSocketFactory });
   const adapter = new LGWebOSAdapter({ deviceId: 'fixture-tv', features: ['media', 'observer'], config: { host: HOST, allowTemporaryObserver: true },
@@ -58,14 +58,34 @@ test('a deadline that expires during app metadata lookup prevents dispatch', asy
   assert.equal(f.calls.some(call => call.uri === 'ssap://system.launcher/launch'), false);
 });
 
-test('text insertion: waiting for focus does not preserve a revoked grant', async t => {
-  let subscription; const ready = deferred();
-  const f = fixture({ subscribe(options) { subscription = options; ready.resolve(); return { unsubscribe() {} }; } });
+test('text insertion: a fresh focus event does not preserve authority revoked at dispatch', async t => {
+  const f = fixture({ subscribe(options, uri) {
+    options.onUpdate(uri.endsWith('/getForegroundAppInfo') ? { appId: APP } : { focus: true });
+    return { unsubscribe() {} };
+  } });
   t.after(() => f.adapter.close());
+  await f.controller.connect(); await f.controller.startKeyboard();
+  const guarded = f.controller.withDispatchGuard.bind(f.controller);
+  f.controller.withDispatchGuard = (guard, task) => guarded(() => { f.revoke(); guard(); }, task);
   const pending = f.adapter.execute({ action: 'text.insert', args: { text: 'fixture text' } }, f.context);
-  await ready.promise; await nextTurn(); f.revoke(); subscription.onUpdate({ focus: true });
   await assert.rejects(pending, { code: 'GRANT_REVOKED' });
   assert.equal(f.calls.some(call => call.uri.endsWith('/insertText')), false);
+});
+
+test('known unsent text focus denial never waits for status or blocks the next navigation', { timeout: 1500 }, async t => {
+  const socket = new EventEmitter(); Object.assign(socket, { readyState: 1, send(_frame, done) { done(); }, terminate() { this.readyState = 3; this.emit('close'); } });
+  const f = fixture({ response(uri) {
+    if (uri.endsWith('/getPointerInputSocket')) return { socketPath: `ws://${HOST}:3000/pointer` };
+    return new Promise(() => {}); // A recovery status read would stall the queue.
+  }, pointerWebSocketFactory: () => { queueMicrotask(() => socket.emit('open')); return socket; } });
+  t.after(() => f.adapter.close());
+  const result = await f.adapter.execute({ action: 'text.insert', args: { text: 'fixture text' } }, f.context);
+  assert.equal(result.requestAccepted, false); assert.equal(result.uncertain, false);
+  assert.equal(result.error.code, 'IME_FOCUS_UNVERIFIED');
+  assert.deepEqual(f.calls, []);
+  const next = await f.adapter.execute({ action: 'navigation.key', args: { key: 'LEFT' } }, f.context);
+  assert.equal(next.transportSent, true);
+  assert.equal(f.calls.length, 1); assert.ok(f.calls[0].uri.endsWith('/getPointerInputSocket'));
 });
 
 test('pointer: revocation during the WebSocket handshake prevents the button frame', async t => {

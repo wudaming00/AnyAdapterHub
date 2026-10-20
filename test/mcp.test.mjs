@@ -46,6 +46,7 @@ async function fixture(overrides = {}) {
     fake[method] = async (...args) => { calls.push([method, ...args]); return { returnValue: true }; };
   }
   fake.status = async () => { calls.push(['status']); return state(); };
+  fake.observeKeyboard = async options => { calls.push(['observeKeyboard', options]); return { subscribed: true, pending: true, focusKnown: false, focused: null, fresh: false, generation: 1, observedAt: null, ageMs: null }; };
   fake.waitForApp = async (id, options) => {
     calls.push(['waitForApp', id, options]);
     return { confirmed: true, appId: id, elapsedMs: 1, foreground: { appId: id } };
@@ -73,7 +74,7 @@ test('initialization negotiates the pinned protocol without loading configuratio
   assert.equal((await server.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).error.code, -32002);
   assert.equal(await server.handle(readyNotification), null);
   const listed = await server.handle({ jsonrpc: '2.0', id: 3, method: 'tools/list' });
-  assert.equal(TV_TOOLS.length, 25);
+  assert.equal(TV_TOOLS.length, 26);
   assert.equal(listed.result.tools.length, TV_TOOLS.length);
   assert.equal(listed.result.tools.find(t => t.name === 'tv_status').annotations.readOnlyHint, true);
   assert.equal(listed.result.tools.find(t => t.name === 'tv_type_text').annotations.idempotentHint, false);
@@ -86,10 +87,10 @@ test('initialization negotiates the pinned protocol without loading configuratio
   assert.equal((await server.handle(initialize)).error.code, -32600);
 });
 
-test('tool call mappings use the controller contract and always close', async () => {
+test('tool call mappings use the controller contract and retain one controller until explicit close', async () => {
   const { server, calls } = await fixture();
   const examples = [
-    ['tv_status', {}, ['status']], ['tv_apps', {}, ['apps']], ['tv_keyboard_state', {}, ['keyboardState']],
+    ['tv_status', {}, ['status']], ['tv_apps', {}, ['apps']],
     ['tv_launch', { id: 'example.app', params: {}, contentId: '123' }, ['launch', 'example.app', {}, '123']],
     ['tv_launch_content', { id: 'example.app', content: 'provider-content-id' }, ['launchContent', 'example.app', 'provider-content-id']],
     ['tv_open_url', { url: 'https://example.org/movie' }, ['openUrl', 'https://example.org/movie']],
@@ -109,10 +110,11 @@ test('tool call mappings use the controller contract and always close', async ()
     calls.length = 0;
     const response = await server.handle(toolCall(name, args));
     assert.equal(response.result.isError, false, name);
-    assert.deepEqual(calls[1], ['connect', { allowPairing: false }]);
+    assert.ok(calls.some(call => call[0] === 'connect' && call[1].allowPairing === false));
     assert.ok(calls.some(call => { try { assert.deepEqual(call, expected); return true; } catch { return false; } }), name);
-    assert.deepEqual(calls.at(-1), ['close']);
+    assert.equal(calls.some(call => call[0] === 'close'), false);
   }
+  await server.close(); assert.deepEqual(calls.at(-1), ['close']);
 });
 
 test('app launches confirm actual foreground but never claim content playback', async () => {
@@ -137,7 +139,7 @@ test('app launches confirm actual foreground but never claim content playback', 
   assert.equal(decoded(timedOut).confirmed, false);
   assert.equal(decoded(timedOut).lastObservedAppId, 'old.app');
   assert.equal(decoded(timedOut).error.code, 'TIMEOUT');
-  assert.deepEqual(calls.at(-1), ['close']);
+  assert.equal(calls.some(call => call[0] === 'close'), false);
 
   fake.waitForApp = async () => ({ confirmed: true, foreground: { appId: 'wrong.app' } });
   const wrong = await server.handle(toolCall('tv_launch', { id: 'example.app' }));
@@ -214,7 +216,7 @@ test('DLNA tools preserve verified renderer results and work without SSAP pairin
     requestAccepted: true, confirmed: true, playbackVerified: true, transportConfirmed: true, transportState: 'PLAYING',
   });
   assert.ok(calls.some(call => call[0] === 'dlnaPlay' && call[1] === url && call[2].mimeType === 'video/mp4' && call[2].title === 'Local movie'));
-  assert.deepEqual(calls.at(-1), ['close']);
+  assert.equal(calls.some(call => call[0] === 'close'), false);
   const status = await server.handle(toolCall('tv_dlna_status'));
   assert.equal(status.result.isError, false);
   assert.equal(decoded(status).transportState, 'PLAYING');
@@ -254,7 +256,7 @@ test('DLNA uncertainty and UPnP errors retain structured evidence without claimi
 test('file casts retain a TV-only listener until a confirmed DLNA stop or server close', async () => {
   const { hosts, mediaHostFactory } = mediaHosts();
   const { server, fake, calls } = await fixture({ mediaHostFactory,
-    loadConfig: async () => ({ host: config.host, wake: { bindAddress: '192.168.1.3' }, mediaRoots: config.mediaRoots }) });
+    loadConfig: async () => ({ ...config, wake: { bindAddress: '192.168.1.3' } }) });
   fake.connect = async () => assert.fail('File casting must not open SSAP');
   const result = await server.handle(toolCall('tv_cast_file', { filePath: localFile, title: 'Selected movie' }));
   assert.equal(result.result.isError, false);
@@ -265,13 +267,12 @@ test('file casts retain a TV-only listener until a confirmed DLNA stop or server
   assert.deepEqual(hosts[0].serveCalls, [[localFile, { mimeType: undefined }]]);
   assert.ok(calls.some(call => call[0] === 'dlnaPlay' && call[1] === hosts[0].url
     && call[2].mimeType === 'video/mp4' && call[2].title === 'Selected movie'));
-  assert.deepEqual(calls.at(-1), ['close']);
+  assert.equal(calls.some(call => call[0] === 'close'), false);
   assert.equal(hosts[0].closeCount, 0);
   assert.equal(JSON.stringify(result).includes(localFile), false);
   assert.equal(JSON.stringify(result).includes(hosts[0].url), false);
   await server.handle(toolCall('tv_dlna_media', { action: 'pause' }));
   assert.equal(hosts[0].closeCount, 0);
-  server.loadConfig = async () => config;
   fake.connect = async (...args) => calls.push(['connect', ...args]);
   assert.equal((await server.handle(toolCall('tv_media', { action: 'stop' }))).result.isError, false);
   assert.equal(hosts[0].closeCount, 0);
@@ -363,7 +364,7 @@ test('concurrent commands wait for foreground verification and failed calls do n
   let release;
   let announce;
   const verifying = new Promise(resolve => { announce = resolve; });
-  fake.waitForApp = id => { announce(); return new Promise(resolve => { release = () => resolve({ confirmed: true, foreground: { appId: id } }); }); };
+  fake.waitForApp = id => { announce(); return new Promise(resolve => { release = () => { calls.push(['verified']); resolve({ confirmed: true, foreground: { appId: id } }); }; }); };
   const launching = server.handle(toolCall('tv_launch', { id: 'example.app' }, 'launch'));
   await verifying;
   const key = server.handle(toolCall('tv_key', { key: 'ENTER' }, 'key'));
@@ -372,7 +373,7 @@ test('concurrent commands wait for foreground verification and failed calls do n
   release();
   assert.equal((await launching).result.isError, false);
   assert.equal((await key).result.isError, false);
-  assert.ok(calls.findIndex(call => call[0] === 'key') > calls.findIndex(call => call[0] === 'close'));
+  assert.ok(calls.findIndex(call => call[0] === 'key') > calls.findIndex(call => call[0] === 'verified'));
   const invalid = server.handle(toolCall('tv_key', { key: 'INVALID' }));
   const next = server.handle(toolCall('tv_key', { key: 'HOME' }));
   assert.equal((await invalid).error.code, -32602);
@@ -534,7 +535,9 @@ test('wake requires explicit action and a saved MAC, and never opens a TV connec
   const { server, calls } = await fixture();
   const result = await server.handle(toolCall('tv_power', { action: 'wake' }));
   assert.equal(result.result.isError, false);
-  assert.deepEqual(calls, [['wake', config.mac, { broadcast: undefined, bindAddress: undefined, port: 9 }]]);
+  assert.equal(calls.length, 1); assert.equal(calls[0][0], 'wake'); assert.equal(calls[0][1], config.mac);
+  const { assertDispatch, ...wakeOptions } = calls[0][2];
+  assert.deepEqual(wakeOptions, { broadcast: undefined, bindAddress: undefined, port: 9 }); assert.equal(assertDispatch(), undefined);
   const missing = await fixture({ loadConfig: async () => ({ host: config.host }) });
   assert.equal((await missing.server.handle(toolCall('tv_power', { action: 'wake' }))).result.isError, true);
   assert.deepEqual(missing.calls, []);
@@ -571,7 +574,7 @@ test('screenshots produce MCP image blocks, and capture failures remain errors',
   assert.equal(response.result.isError, false);
   assert.deepEqual(response.result.content[0], { type: 'image', data: png.toString('base64'), mimeType: 'image/png' });
   assert.deepEqual(JSON.parse(response.result.content[1].text), { bytes: png.length });
-  assert.deepEqual(calls.at(-1), ['close']);
+  assert.equal(calls.some(call => call[0] === 'close'), false);
   fake.screenshot = async () => { throw new Error('500 screenshot execution failed'); };
   const failed = await server.handle(toolCall('tv_screenshot'));
   assert.equal(failed.result.isError, true);
@@ -608,7 +611,7 @@ test('internal observations return JPEG and redacted metadata without claiming t
   assert.equal(observed.mimeType, 'image/jpeg');
   assert.equal(Object.hasOwn(observed, 'image'), false);
   assert.equal(JSON.stringify(response).includes(config.clientKey), false);
-  assert.deepEqual(calls.at(-1), ['close']);
+  assert.equal(calls.some(call => call[0] === 'close'), false);
 });
 
 test('internal observation without an image preserves partial evidence with screenshot explicitly unverified', async () => {
@@ -623,7 +626,7 @@ test('internal observation without an image preserves partial evidence with scre
   assert.equal(decoded(response).screenshotVerified, false);
   assert.equal(decoded(response).foregroundAppId, 'example.app');
   assert.deepEqual(decoded(response).captureError, { code: 'CAPTURE_FAILED' });
-  assert.deepEqual(calls.at(-1), ['close']);
+  assert.equal(calls.some(call => call[0] === 'close'), false);
 });
 
 test('internal observation rejects malformed or oversized images and closes the controller on failure', async () => {
@@ -654,7 +657,7 @@ test('remote commands wait for temporary observation and restoration to finish',
   const observing = new Promise(resolve => { announce = resolve; });
   const { server, calls } = await fixture({ observer: async () => {
     announce();
-    return new Promise(resolve => { release = () => resolve({ metadata: { originalAppRestored: true } }); });
+    return new Promise(resolve => { release = () => { calls.push(['restored']); resolve({ metadata: { originalAppRestored: true } }); }; });
   } });
   const observation = server.handle(toolCall('tv_observe', {}, 'observe'));
   await observing;
@@ -664,7 +667,7 @@ test('remote commands wait for temporary observation and restoration to finish',
   release();
   assert.equal((await observation).result.isError, false);
   assert.equal((await key).result.isError, false);
-  assert.ok(calls.findIndex(call => call[0] === 'key') > calls.findIndex(call => call[0] === 'close'));
+  assert.ok(calls.findIndex(call => call[0] === 'key') > calls.findIndex(call => call[0] === 'restored'));
 });
 
 test('private config selects the exact profile, honors explicit host and never writes', async () => {
@@ -717,10 +720,10 @@ test('stdio handles split UTF-8 newline messages, silent notifications, parse er
   input.end();
   await running;
   const responses = chunks.join('').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(responses.map(r => r.id), ['a', 'b', 'c', null, 'd']);
-  assert.equal(responses[1].result.isError, false);
-  assert.equal(responses[2].error.code, -32601);
-  assert.equal(responses[3].error.code, -32700);
+  assert.deepEqual(responses.map(r => r.id).sort(), ['a', 'b', 'c', null, 'd'].sort());
+  assert.equal(responses.find(r => r.id === 'b').result.isError, false);
+  assert.equal(responses.find(r => r.id === 'c').error.code, -32601);
+  assert.equal(responses.find(r => r.id === null).error.code, -32700);
 });
 
 test('invalid JSON-RPC envelopes are rejected; notifications receive no replies', async () => {

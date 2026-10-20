@@ -7,6 +7,55 @@ import path from 'node:path';
 import os from 'node:os';
 import { LocalMediaHost, byteRange, validateMediaRoots } from '../lib/media-host.mjs';
 
+test('media cleanup has a listener deadline and a late close callback cannot erase failure', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-close-bound-'));
+  const file = path.join(directory, 'fixture.mp4'); await fs.writeFile(file, 'fixture');
+  let callback;
+  const host = new LocalMediaHost({ tvHost: '192.168.77.80', bindAddress: '192.168.77.11', mediaRoots: [directory],
+    serverFactory: () => {
+      const server = new EventEmitter();
+      server.listen = (_port, _address, done) => done(); server.address = () => ({ port: 12345 });
+      server.close = done => { callback = done; }; return server;
+    },
+  });
+  try {
+    await host.serve(file);
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const close = host.close(), denied = assert.rejects(close, { code: 'MEDIA_CLEANUP_FAILED' });
+    t.mock.timers.tick(2000); await denied;
+    callback(); await assert.rejects(host.close(), { code: 'MEDIA_CLEANUP_FAILED' });
+  } finally { t.mock.timers.reset(); await fs.unlink(file); await fs.rmdir(directory); }
+});
+
+test('concurrent cleanup shares one attempt and a failed close never becomes a false later success', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-close-'));
+  const file = path.join(directory, 'fixture.mp4'); await fs.writeFile(file, 'fixture');
+  let closeCalls = 0, finish;
+  const host = new LocalMediaHost({ tvHost: '192.168.77.80', bindAddress: '192.168.77.11', mediaRoots: [directory],
+    serverFactory: () => {
+      const server = new EventEmitter();
+      server.listen = (_port, _address, callback) => callback();
+      server.address = () => ({ port: 12345 });
+      server.closeAllConnections = () => {};
+      server.close = callback => { closeCalls++; finish = callback; };
+      return server;
+    },
+  });
+  try {
+    await host.serve(file);
+    const a = host.close(), b = host.close();
+    const deniedA = assert.rejects(a, { code: 'MEDIA_CLEANUP_FAILED' });
+    const deniedB = assert.rejects(b, { code: 'MEDIA_CLEANUP_FAILED' });
+    assert.equal(closeCalls, 1);
+    finish(Error('synthetic listener close failure'));
+    await deniedA; await deniedB;
+    await assert.rejects(host.close(), { code: 'MEDIA_CLEANUP_FAILED' });
+    assert.equal(closeCalls, 1);
+    await assert.rejects(host.serve(file), /fresh media host/);
+  } finally { await fs.unlink(file); await fs.rmdir(directory); }
+});
+
+
 test('byte ranges support seeking/suffixes and reject invalid, multiple, and beyond-file requests', () => {
   assert.deepEqual(byteRange('bytes=2-4', 10), { start: 2, end: 4, partial: true });
   assert.deepEqual(byteRange('bytes=-3', 10), { start: 7, end: 9, partial: true });
