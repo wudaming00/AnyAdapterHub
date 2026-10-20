@@ -6,7 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { readJson } from '../lib/hub/config.mjs';
+import { readJson, writeSecureJson } from '../lib/hub/config.mjs';
+import { assertPrivateOwner, assertPrivateRegularFile } from '../lib/platform/private-storage.mjs';
 
 // Only temporary fixture files are touched. Updating the built-in export keeps
 // the production named import intact while making a specific race deterministic.
@@ -79,8 +80,8 @@ test('replacement after opening but before the final path check is rejected with
     const handle = await original(file, ...args);
     if (file !== f.file) return handle;
     const stat = handle.stat.bind(handle), read = handle.read.bind(handle);
-    handle.stat = async () => {
-      const info = await stat();
+    handle.stat = async options => {
+      const info = await stat(options);
       await fs.rename(f.file, f.old); await fs.rename(f.replacement, f.file);
       return info;
     };
@@ -89,6 +90,71 @@ test('replacement after opening but before the final path check is rejected with
   });
   await assert.rejects(readJson(f.file), { code: 'HUB_HOME_UNSAFE' });
   assert.equal(reads, 0);
+});
+
+function inodeCollision(t, file, { afterOpen = 9007199254740992n, atPath = afterOpen + 1n, onHandle } = {}) {
+  assert.equal(Number(afterOpen), Number(typeof atPath === 'function' ? atPath() : atPath));
+  interceptOpen(t, async (original, target, ...args) => {
+    const handle = await original(target, ...args);
+    if (target !== file) return handle;
+    const stat = handle.stat.bind(handle);
+    handle.stat = async options => {
+      const info = await stat(options); info.ino = options?.bigint ? afterOpen : Number(afterOpen); return info;
+    };
+    onHandle?.(handle); return handle;
+  });
+  const original = fs.lstat;
+  const mocked = t.mock.method(fs, 'lstat', async (target, options) => {
+    const info = await original(target, options);
+    if (target === file) { const ino = typeof atPath === 'function' ? atPath() : atPath; info.ino = options?.bigint ? ino : Number(ino); }
+    return info;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { mocked.mock.restore(); syncBuiltinESMExports(); });
+}
+
+test('configuration rejects distinct 64-bit identities that alias as Numbers before reading', async t => {
+  const f = await fixture(t); let reads = 0;
+  inodeCollision(t, f.file, { onHandle: handle => {
+    const read = handle.read.bind(handle); handle.read = (...args) => { reads++; return read(...args); };
+  } });
+  await assert.rejects(readJson(f.file), { code: 'HUB_HOME_UNSAFE' });
+  assert.equal(reads, 0);
+});
+
+test('configuration replacement with a rounded inode collision cannot truncate or write', async t => {
+  const f = await fixture(t); let effects = 0;
+  inodeCollision(t, f.file, { onHandle: handle => {
+    handle.truncate = async () => { effects++; };
+    handle.writeFile = async () => { effects++; };
+  } });
+  await assert.rejects(writeSecureJson(f.file, { replaced: true }, { exclusive: false }), { code: 'HUB_HOME_UNSAFE' });
+  assert.equal(effects, 0);
+  assert.equal(await fs.readFile(f.file, 'utf8'), '{"fixture":"selected"}');
+});
+
+test('failed creation rollback preserves a replacement whose inode differs beyond Number precision', async t => {
+  const f = await fixture(t), file = path.join(f.directory, 'created.json');
+  const originalInode = 9007199254740992n; let replaced = false;
+  inodeCollision(t, file, { afterOpen: originalInode, atPath: () => replaced ? originalInode + 1n : originalInode,
+    onHandle: handle => {
+      handle.writeFile = async () => {
+        await fs.rename(file, path.join(f.directory, 'created-original.json'));
+        await fs.writeFile(file, 'preserve replacement'); replaced = true;
+        throw Object.assign(new Error('Synthetic disk failure.'), { code: 'ENOSPC' });
+      };
+    },
+  });
+  await assert.rejects(writeSecureJson(file, { fixture: true }), { code: 'ENOSPC' });
+  assert.equal(await fs.readFile(file, 'utf8'), 'preserve replacement');
+});
+
+test('private regular-file and owner checks retain their rules for BigInt stats', () => {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
+  const info = { isFile: () => true, isSymbolicLink: () => false, nlink: 1n, uid: BigInt(uid) };
+  assert.doesNotThrow(() => assertPrivateRegularFile(info));
+  for (const nlink of [0n, 2n, '1', undefined]) assert.throws(() => assertPrivateRegularFile({ ...info, nlink }), { code: 'HUB_HOME_UNSAFE' });
+  if (process.platform !== 'win32') assert.throws(() => assertPrivateOwner({ uid: BigInt(uid) + 1n }), { code: 'HUB_HOME_UNSAFE' });
 });
 
 test('a pre-existing symbolic configuration link is refused', async t => {

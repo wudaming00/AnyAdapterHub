@@ -31,6 +31,7 @@ This file records source changes. There is no published npm package or tagged re
 
 ### Credential and transport changes
 
+- Preserve exact filesystem identities in private configuration, enrolled certificate, media-file and rollback checks, including production journal cleanup.
 - Windows CurrentUser DPAPI for Hub tokens, LG pairing keys and the Hub TLS private key; unsupported production providers fail closed.
 - Hub HTTPS with exact certificate trust, LG WSS/pointer/capture pin checks before secret/application traffic, and no automatic plaintext control downgrade.
 - Explicit rerunnable security migration, offline-TV pending enrollment and stop-before-migration checks.

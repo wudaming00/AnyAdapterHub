@@ -135,6 +135,32 @@ test('mediaRoots require explicit local directory paths and default to deny', as
   await host.close();
 });
 
+test('media host rejects rounded 64-bit identity collisions before starting a listener and closes the file', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-inode-'));
+  const file = path.join(directory, 'fixture.mp4'); await fs.writeFile(file, 'synthetic');
+  const selectedFile = await fs.realpath(file);
+  const before = 9007199254740992n, opened = before + 1n;
+  assert.equal(Number(before), Number(opened));
+  let listeners = 0, closes = 0;
+  const originalStat = fs.stat, originalOpen = fs.open;
+  t.mock.method(fs, 'stat', async (target, options) => {
+    const info = await originalStat(target, options); if (target === selectedFile) info.ino = options?.bigint ? before : Number(before); return info;
+  });
+  t.mock.method(fs, 'open', async (...args) => {
+    const handle = await originalOpen(...args); if (args[0] !== selectedFile) return handle;
+    const stat = handle.stat.bind(handle), close = handle.close.bind(handle);
+    handle.stat = async options => { const info = await stat(options); info.ino = options?.bigint ? opened : Number(opened); return info; };
+    handle.close = async () => { closes++; return close(); }; return handle;
+  });
+  const host = new LocalMediaHost({ tvHost: '192.168.77.80', bindAddress: '192.168.77.11', mediaRoots: [directory],
+    serverFactory: () => { listeners++; throw new Error('A changed file cannot start a listener.'); } });
+  try {
+    await assert.rejects(host.serve(file), /regular media file/);
+    assert.equal(listeners, 0); assert.equal(closes, 1);
+    await host.close(); assert.equal(closes, 1);
+  } finally { await host.close(); await fs.unlink(file); await fs.rmdir(directory); }
+});
+
 test('media files must resolve inside approved directories and cannot override extension MIME types', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-policy-'));
   const root = path.join(directory, 'allowed');

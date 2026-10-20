@@ -6,6 +6,8 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { promises as fixtureFS } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
 import { initializeHub, writePrivateJson, readJson } from '../lib/hub/config.mjs';
 import { resolveCredential } from '../lib/security/credentials.mjs';
@@ -64,6 +66,20 @@ test('stable keys preserve immutable intent and a new key retains the earlier re
   assert.equal(second.workflowId, 'second-request');
   assert.equal(await readFile(path.join(f.home, f.journalName()), 'utf8'), before);
   assert.equal((await readdir(f.home)).filter(name => /^movie-[a-f0-9]{64}\.json$/.test(name)).length, 2);
+});
+
+test('a failed journal rename removes only its created temporary file using the exact saved identity', async t => {
+  const f = await fixture(t), original = fixtureFS.rename; let attempts = 0;
+  const mock = t.mock.method(fixtureFS, 'rename', async (source, destination) => {
+    if (path.dirname(source) === f.home && path.basename(source).startsWith('movie-write-')) {
+      attempts++; throw Object.assign(new Error('Synthetic rename failure.'), { code: 'ENOSPC' });
+    }
+    return original(source, destination);
+  });
+  syncBuiltinESMExports(); t.after(() => { mock.mock.restore(); syncBuiltinESMExports(); });
+  await assert.rejects(withMovieWorkflow({ ...f.options, create: f.create }, () => assert.fail('Failed persistence reached the caller.')), { code: 'ENOSPC' });
+  assert.equal(attempts, 1);
+  assert.equal((await readdir(f.home)).some(name => name.startsWith('movie-write-')), false);
 });
 
 test('owner credentials and owner tokens with forged grant metadata are rejected locally', async t => {

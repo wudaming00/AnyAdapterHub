@@ -81,8 +81,9 @@ async function certificate(file) {
   // NONBLOCK prevents a substituted FIFO from stalling before fstat on POSIX.
   const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
-    const info = await handle.stat(), current = await lstat(file);
-    if (!info.isFile() || info.nlink !== 1 || info.size > 16384 || !current.isFile() || current.isSymbolicLink() || current.dev !== info.dev || current.ino !== info.ino) fail();
+    // File identifiers are 64-bit values; Number can alias distinct NTFS inodes.
+    const info = await handle.stat({ bigint: true }), current = await lstat(file, { bigint: true });
+    if (!info.isFile() || info.nlink !== 1n || info.size > 16384n || !current.isFile() || current.isSymbolicLink() || current.dev !== info.dev || current.ino !== info.ino) fail();
     const bytes = Buffer.alloc(16385); let length = 0;
     while (length < bytes.length) { const { bytesRead } = await handle.read(bytes, length, bytes.length - length, length); if (!bytesRead) break; length += bytesRead; }
     if (length > 16384) fail();
