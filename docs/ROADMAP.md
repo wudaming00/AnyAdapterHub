@@ -27,6 +27,12 @@ Acceptance criteria:
 
 ## Improve enrollment and credential boundaries
 
+The proposed [onboarding interface](ONBOARDING_UX.md) separates household unlock,
+vendor-account connection, device selection and narrow agent grants. Graphical
+setup, UI sessions, theme rendering and general vendor-login flows are not yet
+implemented. The [AI handbook](AI_ADAPTER_GUIDE.md) describes the current working
+CLI/SDK and the contribution process, not a replacement for owner consent.
+
 Windows encryption is implemented. Linux/macOS production secret providers, cross-account secure grant enrollment/transfer, credential/certificate rotation workflows and stronger deployment isolation remain future work.
 
 A new provider must fail closed, bind ciphertext to its purpose, reject tampering and never use a master key stored beside the ciphertext. A worker boundary must define OS identity, network targets, filesystem permissions, resource limits and secret access; a subprocess or lazy import is not a sandbox.

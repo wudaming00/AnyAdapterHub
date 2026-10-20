@@ -40,6 +40,7 @@
     "privileged-probe/capture-cleanup.js",
     "scripts/",
     "README.md",
+    "AGENTS.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
     "docs/",
