@@ -72,6 +72,7 @@ and the caller's current subset. Every argument object rejects unknown keys.
 | `app.launch` | `id`: ordinary app ID |
 | `app.content.launch` | `id`: app ID; `content`: provider ID or approved HTTP(S) URL |
 | `navigation.key` | `key`: exact remote-key enum from the advertised schema |
+| `navigation.sequence` | `keys`: 1–12 entries from `UP`, `DOWN`, `LEFT`, `RIGHT`, `ENTER`, `BACK`; optional `notAfter`: canonical UTC ISO timestamp that only shortens the dispatch deadline |
 | `pointer.move` | `dx`, `dy`: integers −10000–10000 |
 | `pointer.click` | `{}` |
 | `pointer.scroll` | `dx`, `dy`: integers −1000–1000 |
@@ -95,6 +96,21 @@ characters. URLs are at most 4096 characters and require the owner's exact origi
 allowlist. File casting requires configured media roots, supported extensions,
 matching MIME and a real-path check by the media host. Navigation enums and these
 IDs never become arbitrary SSAP endpoints or vendor command names.
+
+`navigation.sequence` needs its own grant. A `navigation.key` grant does not
+authorize batches. The LG adapter validates the entire sequence before sending,
+holds the selected device queue, and sends keys serially with a fixed 250 ms
+interval. It rechecks authority and deadlines at every final transport send.
+This is one Hub operation, not an atomic TV command or one network frame.
+`notAfter` is an additional absolute upper bound; it cannot extend the Hub
+deadline or restore expired authority.
+
+Sequence results distinguish requested keys, attempted calls and completed
+transport callbacks. `sequenceComplete` does not verify the resulting interface.
+Partial or ambiguous sends remain uncertain and are never replayed as a batch
+or a remaining suffix. Read the original operation and obtain a new screen
+before deciding what to do next. A process crash can lose exact prefix progress;
+restart recovery reports unknown instead of reconstructing it.
 
 ## Action submissions and operation records
 

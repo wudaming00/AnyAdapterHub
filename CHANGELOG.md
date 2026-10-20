@@ -56,6 +56,14 @@ This file records source changes. There is no published npm package or tagged re
 - New independently granted Hub `text.focus.read` reads immediate focus metadata; optional media capability `media.host.release` and MCP `tv_release_media` close only listeners owned by that running instance, without TV discovery or a Stop request. They cannot release another process's listener or verify television playback. Existing grants are not expanded.
 - Listener cleanup has a bounded server-close wait, shares one close attempt and preserves failure on repeated calls. MCP retains failed resources for reconciliation and caps outstanding media hosts at two. Cleanup failure is not reported as success.
 
+### Bounded LG navigation sequences
+
+- Separately granted `navigation.sequence` validates 1–12 fixed navigation keys before sending and executes them as one queued Hub operation. Sends stay serial, with per-key final authority/deadline checks and a fixed 250 ms interval; partial effects are not atomic or automatically replayed.
+- Movie workflow key decisions use one checkpointed sequence operation rather than one operation per key. An absolute `notAfter` derived from the original observation bounds visual freshness even when HTTP delivery is delayed. Profile selection and playback-control revelation retain their single-key restrictions; Play remains separate.
+- Transport progress remains distinct from UI confirmation. Ambiguous or interrupted batches require observation and original-operation reconciliation, without resending a prefix or suffix. Existing grants are not expanded.
+- Ordinary navigation clears cached text focus while retaining valid IME subscriptions, avoiding a gap on TVs that report only later field changes. Typing remains blocked during an unsettled pointer send; only a real boolean event within its original freshness bound can authorize insertion. Failed sends, app changes and explicit launches invalidate the context.
+- An incomplete focus-change notification retires the previous field rather than preserving an old true focus. This repairs event handling; it does not establish keyboard compatibility for a particular retail app.
+
 ### Documentation and checks
 
 - English/Chinese project and contribution entry points, setup/operations guides, API/SDK reference, troubleshooting, architecture and adapter contribution walkthrough.

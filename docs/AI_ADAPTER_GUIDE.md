@@ -188,6 +188,14 @@ reporting `playing` does not identify the title. A vacuum accepting a command
 or reporting an active task does not prove cleaning finished. Preserve those
 limits in both UI messages and machine-readable results.
 
+For bounded TV navigation, `navigation.sequence` is a separately granted action
+for 1–12 fixed ordinary keys. It submits one Hub operation while preserving
+per-key final dispatch checks and a selected-device queue. It is not atomic;
+partial/unknown progress requires fresh observation, never automatic batch or
+suffix replay. Its optional absolute `notAfter` only shortens the dispatch
+window. Do not substitute a `navigation.key` grant, add arbitrary key names or
+use batches to cross login, PIN, purchase or other authority boundaries.
+
 For Disney+ on an enrolled compatible LG, use the fixed
 [movie workflow](MOVIE_WORKFLOW.md) instead of reconstructing an unjournaled
 remote-key script. An attached visual agent supplies frame-bound decisions;

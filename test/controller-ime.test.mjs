@@ -7,7 +7,7 @@ const FOREGROUND = 'ssap://com.webos.applicationManager/getForegroundAppInfo';
 const IME = 'ssap://com.webos.service.ime/registerRemoteKeyboard';
 const INSERT = 'ssap://com.webos.service.ime/insertText';
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
-function fixture({ focus, foreground = true, delayed = false, request } = {}) {
+function fixture({ focus, foreground = true, delayed = false, request, pointerSend } = {}) {
   const subscriptions = [], writes = [], sockets = [];
   let time = 100;
   const client = { registered: true, timeoutMs: 100,
@@ -26,7 +26,7 @@ function fixture({ focus, foreground = true, delayed = false, request } = {}) {
   const controller = new TVController({ host: '192.168.30.40', ssapClient: client, keyboardNowFn: () => time,
     pointerWebSocketFactory: () => {
       const socket = new EventEmitter(); socket.readyState = 1; socket.terminate = () => {};
-      socket.send = (_frame, callback) => callback(); sockets.push(socket);
+      socket.send = (frame, callback) => pointerSend ? pointerSend(frame, callback) : callback(); sockets.push(socket);
       queueMicrotask(() => socket.emit('open')); return socket;
     } });
   const latest = uri => subscriptions.filter(subscription => subscription.uri === uri).at(-1);
@@ -86,15 +86,84 @@ test('freshness cannot be widened and option getters/proxies/unknown fields fail
   assert.equal(invoked, 0); assert.equal(f.subscriptions.length, 0); f.controller.close();
 });
 
-test('an explicit read wait survives navigation but obsolete subscription callbacks cannot grant focus', async () => {
+test('an explicit read wait keeps the same event stream across navigation without an initial snapshot', async () => {
   const f = fixture(); const pending = f.controller.observeKeyboard({ waitMs: 100 }); await flush();
   const old = f.latest(IME), before = (await f.controller.observeKeyboard()).generation;
   await f.controller.key('RIGHT'); await flush();
-  assert.equal(old.unsubscribed, true); old.options.onUpdate({ focus: true });
-  await assert.rejects(f.controller.typeText('old-context'), { code: 'IME_FOCUS_UNVERIFIED' });
+  assert.equal(old.unsubscribed, false); assert.equal(f.subscriptions.length, 2);
+  await assert.rejects(f.controller.typeText('no-new-event'), { code: 'IME_FOCUS_UNVERIFIED' });
   f.update({ currentWidget: { focus: true } });
   const observed = await pending; assert.equal(observed.focused, true); assert.ok(observed.generation > before);
   assert.equal(f.writes.some(write => write.uri === INSERT), false); f.controller.close();
+});
+
+test('a real focus event during pointer send is retained but cannot authorize typing before send completion', async () => {
+  let finish;
+  const f = fixture({ pointerSend: (_frame, callback) => { finish = callback; } });
+  await f.controller.startKeyboard(); const original = f.latest(IME);
+  const pending = f.controller.observeKeyboard({ waitMs: 100 });
+  const key = f.controller.key('ENTER'); await flush();
+  f.update({ currentWidget: { focus: true }, focusChanged: true });
+  const during = await f.controller.observeKeyboard();
+  assert.equal(during.subscribed, true); assert.equal(during.pending, true); assert.equal(during.focusKnown, false);
+  await assert.rejects(f.controller.typeText('too-early'), { code: 'IME_FOCUS_UNVERIFIED' });
+  assert.equal(original.unsubscribed, false); assert.equal(f.subscriptions.length, 2);
+  finish(); await key;
+  const observed = await pending; assert.equal(observed.focused, true); assert.equal(observed.focusKnown, true);
+  await f.controller.typeText('Frozen', { replace: true });
+  assert.deepEqual(f.writes.filter(write => write.uri === INSERT).map(write => write.payload), [{ text: 'Frozen', replace: true }]);
+  f.controller.close();
+});
+
+test('pointer completion and registration acknowledgements cannot revive pre-navigation focus', async () => {
+  const f = fixture(); await f.controller.startKeyboard(); f.update({ currentWidget: { focus: true } });
+  await f.controller.key('RIGHT'); f.update({ subscribed: true });
+  assert.equal((await f.controller.observeKeyboard()).focusKnown, false);
+  await assert.rejects(f.controller.typeText('old-field'), { code: 'IME_FOCUS_UNVERIFIED' });
+  f.update({ currentWidget: { focus: false }, focusChanged: true });
+  assert.equal((await f.controller.observeKeyboard()).focused, false);
+  await assert.rejects(f.controller.typeText('unfocused'), { code: 'IME_FOCUS_UNVERIFIED' });
+  f.update({ currentWidget: { focus: true }, focusChanged: true });
+  await f.controller.typeText('one-explicit-request');
+  assert.equal(f.writes.filter(write => write.uri === INSERT).length, 1); f.controller.close();
+});
+
+test('failed pointer sends invalidate the stream and ignore late focus without replaying or inserting', async () => {
+  let finish;
+  const f = fixture({ pointerSend: (_frame, callback) => { finish = callback; } });
+  await f.controller.startKeyboard(); const old = f.latest(IME);
+  const key = f.controller.key('ENTER'); const denied = assert.rejects(key, { code: 'POINTER_ERROR' }); await flush();
+  f.update({ currentWidget: { focus: true } }); finish(Error('fixture-write-failed')); await denied;
+  assert.equal(old.unsubscribed, true); old.options.onUpdate({ currentWidget: { focus: true } });
+  await assert.rejects(f.controller.typeText('late-old-field'), { code: 'IME_FOCUS_UNVERIFIED' });
+  assert.equal(f.writes.filter(write => write.uri === INSERT).length, 0); f.controller.close();
+});
+
+test('focus received during a delayed pointer send still expires at the original observation time', async () => {
+  let finish;
+  const f = fixture({ pointerSend: (_frame, callback) => { finish = callback; } });
+  await f.controller.startKeyboard(); const key = f.controller.key('ENTER'); await flush();
+  f.update({ currentWidget: { focus: true } }); f.advance(KEYBOARD_MAX_AGE_MS + 1);
+  finish(); await key;
+  await assert.rejects(f.controller.typeText('expired-during-send'), { code: 'IME_FOCUS_UNVERIFIED' });
+  assert.equal(f.writes.filter(write => write.uri === INSERT).length, 0); f.controller.close();
+});
+
+test('foreground changes during navigation and non-navigation buttons still retire the old event stream', async () => {
+  let finish;
+  const f = fixture({ pointerSend: (_frame, callback) => { finish = callback; } });
+  await f.controller.startKeyboard(); const old = f.latest(IME);
+  const key = f.controller.key('ENTER'); await flush();
+  f.latest(FOREGROUND).options.onUpdate({ appId: 'com.fixture.other' }); await flush();
+  assert.equal(old.unsubscribed, true); old.options.onUpdate({ currentWidget: { focus: true } });
+  finish(); await key;
+  await assert.rejects(f.controller.typeText('previous-app'), { code: 'IME_FOCUS_UNVERIFIED' });
+  const next = f.latest(IME); f.update({ currentWidget: { focus: true } });
+  const search = f.controller.key('SEARCH'); await flush();
+  assert.equal(next.unsubscribed, true); next.options.onUpdate({ currentWidget: { focus: true } });
+  finish(); await search; await flush();
+  await assert.rejects(f.controller.typeText('previous-app-field'), { code: 'IME_FOCUS_UNVERIFIED' });
+  assert.equal(f.writes.filter(write => write.uri === INSERT).length, 0); f.controller.close();
 });
 
 test('foreground app changes, launch/observer and explicit invalidation discard prior focus', async () => {
@@ -171,6 +240,19 @@ test('malformed focus payloads invalidate old evidence without invoking widget a
     await assert.rejects(f.controller.typeText('malformed'), { code: 'IME_FOCUS_UNVERIFIED' });
   }
   f.update(new Proxy({}, { getOwnPropertyDescriptor() { invoked++; return {}; } }));
+  assert.equal(invoked, 0); assert.deepEqual(f.writes, []); f.controller.close();
+});
+
+test('focusChanged without a valid boolean discards the previous field and advances its generation', async () => {
+  const f = fixture(); await f.controller.startKeyboard(); let invoked = 0;
+  for (const payload of [{ focusChanged: true }, { focusChanged: true, currentWidget: null },
+    { focusChanged: true, currentWidget: { focus: 'true' } },
+    Object.defineProperty({}, 'focusChanged', { enumerable: true, get() { invoked++; return true; } })]) {
+    f.update({ currentWidget: { focus: true } }); const before = (await f.controller.observeKeyboard()).generation;
+    f.update(payload); const after = await f.controller.observeKeyboard();
+    assert.equal(after.focusKnown, false); assert.ok(after.generation > before);
+    await assert.rejects(f.controller.typeText('different-unknown-field'), { code: 'IME_FOCUS_UNVERIFIED' });
+  }
   assert.equal(invoked, 0); assert.deepEqual(f.writes, []); f.controller.close();
 });
 

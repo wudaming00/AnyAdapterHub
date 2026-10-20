@@ -126,6 +126,18 @@ focus, obtain a new frame. Do not use a remembered sequence as proof of the
 current UI. The workflow does not provide general text entry or pointer control
 through a model-supplied script.
 
+A `keys` decision now checkpoints and submits one `navigation.sequence`
+operation, instead of a separate encrypted workflow step for each key. The
+client needs that exact additional capability; the workflow does not expand an
+existing grant or fall back to a per-key script. The adapter still sends each
+key serially and checks permission/deadlines immediately before every send.
+The workflow derives `notAfter` from its original observation/frame freshness
+limits, so delayed HTTP delivery cannot extend the 60-second visual basis.
+The Play action remains a separate, previously verified `navigation.key`.
+Profile selection and playback control revelation retain their single-key rules.
+After a partial or ambiguous sequence, observe again; neither recovery nor the
+operation lookup resends the batch or its remaining keys.
+
 Stop for login, PIN, purchases, account/profile changes, unexpected permission
 prompts or an interface the agent cannot identify. Report the necessary owner
 action without copying passwords, codes or account data into the decision.
@@ -188,7 +200,8 @@ Requests expire after 30 minutes and have at most 240 underlying operations.
 Visual decisions require capture and observation timestamps no older than 60
 seconds, checked again after frame reads and durable preparation. This is
 separate from the Hub frame store's five-minute retention. Prefer short batches
-of one to three keys on a host with expensive encrypted writes.
+whose effects remain clear; one sequence avoids repeated per-key encrypted
+checkpoints, but does not remove visual freshness limits or UI transition waits.
 Expired journals remain encrypted files; expiry is not automatic deletion.
 The original Hub operation retention policy is unchanged.
 
