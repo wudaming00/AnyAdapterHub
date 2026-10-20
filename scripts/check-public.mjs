@@ -8,7 +8,7 @@ const git = args => execFileSync('git', args, { cwd, maxBuffer: 8 * 1024 * 1024,
 const entries = git(['ls-files', '--stage', '-z']).toString('utf8').split('\0').filter(Boolean);
 if (!entries.length) throw new Error('Public review requires a nonempty Git index. Stage the explicit public source first.');
 const denied = /(^|\/)(?:node_modules|reports|captures|\.device-hub|\.git|\.venv|__pycache__|work|outputs)(\/|$)|(?:^|\/)\.env(?:\.|$)|\.local\.json|\.(?:log|sqlite(?:-wal|-shm)?|db|tgz|bin|pem|key|jpe?g|png|mp4|zip)$|^probe-|LOCAL-LAB|slopbro|^dev-observer\/|privileged-probe\/(?:main\.js|loader\.html|cleanup-owned\.js)|test\/privileged-(?:loader|probe)\.test\.mjs/i;
-const allowed = /^(?:\.gitattributes|\.gitignore|(?:README(?:\.zh-CN)?|CONTRIBUTING|SECURITY|THIRD_PARTY_NOTICES)\.md|LICENSE|package(?:-lock)?\.json|(?:device-hub|lg-tv|mcp-tv|discover|inspect-public)\.mjs|(?:\.github|lib|docs|profiles|schema|scripts|test|optional|integrations|third_party|privileged-probe)\/[A-Za-z0-9_./-]+)$/;
+const allowed = /^(?:\.gitattributes|\.gitignore|(?:README(?:\.zh-CN)?|CONTRIBUTING(?:\.zh-CN)?|CHANGELOG|SECURITY|THIRD_PARTY_NOTICES)\.md|LICENSE|package(?:-lock)?\.json|(?:device-hub|lg-tv|mcp-tv|discover|inspect-public)\.mjs|(?:\.github|lib|docs|profiles|schema|scripts|test|optional|integrations|third_party|privileged-probe)\/[A-Za-z0-9_./-]+)$/;
 const secrets = new Set();
 function collect(value, field = '') {
   if (typeof value === 'string' && /^(?:token|clientKey|password|secret|mac|selectedDeviceSha256)$/i.test(field) && value.length >= 8) secrets.add(value);

@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a reproducible software problem with sanitized evidence.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security vulnerabilities, use [private reporting](https://github.com/wudaming00/AnyAdapterHub/security/advisories/new) instead.
+        Do not attach credential/config files, raw logs, IP/MAC addresses, device/account IDs, maps or personal screenshots.
+        A passing test or an accepted device command is not proof of a physical outcome.
+  - type: input
+    id: revision
+    attributes:
+      label: Project version or commit
+      description: Use the public commit hash or release version; do not paste local paths.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and runtime versions
+      description: Include Node.js and, if relevant, the optional Python/adapter dependency versions. No host or account identifiers.
+    validations:
+      required: true
+  - type: input
+    id: adapter
+    attributes:
+      label: Adapter, exact model and firmware, if applicable
+      description: State unknown firmware as unknown. Report an offline fixture issue as offline.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal sanitized reproduction
+      description: Replace all private values with placeholders. Describe owner opt-ins and scoped capabilities without copying tokens or private files.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior and verification
+      description: Include sanitized error codes; distinguish command acceptance, state readback and visible effects. Note unknown outcomes and cleanup failures without retrying uncertain writes.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy review
+      options:
+        - label: I removed credentials and household identifiers and am not disclosing a vulnerability in this public issue.
+          required: true

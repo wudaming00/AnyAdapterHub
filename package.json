@@ -12,8 +12,9 @@
     "hub": "node device-hub.mjs",
     "test": "node --test",
     "check:profiles": "node scripts/check-profiles.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
     "check:package": "node scripts/check-package.mjs",
-    "check": "npm test && npm run check:profiles && npm run check:package && npm run check:public",
+    "check": "npm test && npm run check:profiles && npm run check:docs && npm run check:package && npm run check:public",
     "check:public": "node scripts/check-public.mjs",
     "adapter:lg:install": "npm install --no-save --package-lock=false --ignore-scripts ws@8.22.0"
   },
@@ -54,7 +55,9 @@
     "optional/ecovacs/LICENSE",
     "optional/ecovacs/README.md",
     "optional/ecovacs/provenance.json",
-    "optional/lg-webos/README.md"
+    "optional/lg-webos/README.md",
+    "CONTRIBUTING.zh-CN.md",
+    "CHANGELOG.md"
   ],
   "repository": {
     "type": "git",

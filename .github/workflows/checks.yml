@@ -28,5 +28,6 @@ jobs:
       - run: npm test
       - run: python -I -B optional/ecovacs/test_worker.py
       - run: npm run check:profiles
+      - run: npm run check:docs
       - run: npm run check:package
       - run: npm run check:public

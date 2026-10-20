@@ -1,81 +1,83 @@
 # AnyAdapter Hub
 
-Current live security support: Windows CurrentUser DPAPI plus pinned HTTPS. No plaintext credential fallback. Existing installations must follow [secure migration](docs/SECURE_SETUP.md); adapters and enhancements are optional. Linux/macOS require a reviewed secret provider before live enrollment.
+A local device hub for agents. **AnyAdapter** connects reviewed device adapters to a common permission and feedback layer, independently of an agent framework. Collie and other agents can use the HTTPS API or JavaScript SDK; MCP is a legacy optional interface.
 
-**A local device hub for agents.** AnyAdapter for short. Connect devices through reviewed adapters, grant precise permissions, and distinguish accepted commands from observed outcomes.
+[中文](README.zh-CN.md) · [Documentation](docs/README.md) · [Get started](docs/GETTING_STARTED.md) · [Supported devices](docs/SUPPORTED_DEVICES.md) · [Contribute](CONTRIBUTING.md)
 
-[中文](README.zh-CN.md) · [Supported devices](docs/SUPPORTED_DEVICES.md) · [Security](SECURITY.md) · [Adapter requirements](docs/ADAPTER_REQUIREMENTS.md)
+**Development preview.** Live enrollment currently requires Windows, Node.js 22.13+ and Git for Windows with its bundled OpenSSL. Credentials use Windows CurrentUser DPAPI; clients use pinned loopback HTTPS. Linux and macOS lack a production secret provider and fail closed. Cross-platform CI is not a live-platform support claim. No independent security audit or npm release has been completed.
 
-AnyAdapter Hub runs independently of any agent framework. Clients use pinned loopback HTTPS, SSE, or the JavaScript SDK. Collie and other agents can connect as clients; MCP is an optional legacy interface.
+## What it does
 
-**Development preview.** This is an owner-operated research project, not a production security boundary. It has not received an independent security audit. Do not expose the hub or device interfaces to the internet. npm publication remains disabled.
+- Runs a local HTTPS hub with per-device state, freshness timestamps and SSE events.
+- Grants exact device/action permissions with expiry, revocation and a check immediately before device dispatch.
+- Records operation IDs and idempotency keys. Uncertain writes are not automatically replayed after reconnect or restart.
+- Keeps device adapters and their dependencies optional. Community model profiles are validated data; they cannot install code or authorize a device.
+- Separates ordinary state, screen capture and permission to read retained frames.
 
-## Device support
+The core can start with no devices. Installing an adapter does not enroll a household device or grant an agent control.
 
-| Adapter | Status | What the evidence establishes |
-| --- | --- | --- |
-| LG webOS — OLED65B8PUA, firmware `05.50.70` | Hardware verified for the documented capabilities | Status, app inventory/launch, volume/mute, input selection, remote keys, power, DLNA and selected-file casting. The new hub has its own control/readback, events, permission and restart evidence. |
-| LG temporary screen observation — same exact model/firmware | Experimental; separate owner opt-in | A real 1920×1080 JPEG and system player state, with restoration and cleanup checks. No root, continuous video, Disney+ DOM, or trusted movie-title field. |
-| ECOVACS DEEBOT X11 OmniCyclone, US ECOVACS HOME, Windows | Experimental optional cloud adapter | Fresh state and normalized settings/service counters verified through the hub with a scoped read-only client. Movement controls are implemented and tested offline, with no live movement validation through this bridge. Existing DPAPI enrollment is required. [Setup and limits](docs/ECOVACS_X11.md). |
-| Other LG models / firmware | Unverified | Sharing a protocol or model family is insufficient evidence. Contribute an exact model/firmware report. |
+## Current support
 
-See the [compatibility matrix](docs/SUPPORTED_DEVICES.md), [LG hardware evidence](docs/evidence/lg-b8-2026-10-19.md), and [hub evidence](docs/evidence/local-hub-2026-10-19.md). Implemented actions are not all hardware verified.
+| Adapter | Evidence and limits |
+| --- | --- |
+| LG OLED65B8PUA, firmware `05.50.70`, webOS release `4.4.3` | Historical hardware evidence covers selected controls, state, media and temporary observation. The new pinned LG transport has local TLS tests; certificate enrollment and hardware retesting on this TV remain pending. Other models/firmware are unverified. |
+| Optional B8 observer | Historical 1920×1080 JPEG and system-player feedback. Exact model/firmware, local opt-in and separate grants are required. Legacy LAN callbacks remain unencrypted; the feature defaults off. It does not expose Disney+ DOM or prove a movie title is playing. |
+| Optional ECOVACS DEEBOT X11 OmniCyclone | US ECOVACS HOME, Windows, existing encrypted enrollment. Hub state/details reads were hardware verified; movement actions have offline tests only. Firmware is unknown. |
 
-## Quick start: LG
+See [the capability matrix](docs/SUPPORTED_DEVICES.md) and its linked evidence. A shared protocol, passing test or contributed report does not establish support for another device.
 
-Requires Node.js **22.13+**; the initial local validation used 22.22.2 and its experimental built-in SQLite. Use a trusted computer and network.
+## Start the core
 
-```sh
+From a new Windows PowerShell checkout:
+
+```powershell
+git clone https://github.com/wudaming00/AnyAdapterHub.git
+Set-Location AnyAdapterHub
 npm ci --ignore-scripts
-npm run adapter:lg:install
-npm run check
-node lg-tv.mjs certificate --host <TV_LAN_IP>
-node lg-tv.mjs pair --host <TV_LAN_IP> --certificate-pin <REVIEWED_SHA256_HEX> --profile control
-node device-hub.mjs init --tv-config .lg-tv.local.json --host <TV_LAN_IP>
+node device-hub.mjs adapters
+node device-hub.mjs init
 node device-hub.mjs serve
 ```
 
-Pairing requires approval on your own television. The hub imports an existing pairing reference; it never silently pairs, escalates device privileges, or installs a startup service. The optional third-party legacy pairing identity is documented in [third-party notices](THIRD_PARTY_NOTICES.md).
+This creates a protected `.device-hub` directory and serves `https://127.0.0.1:8765` with no adapters or devices enabled. It installs no TV transport, Python SDK or OS startup task. Keep this terminal open. In another project terminal, `node device-hub.mjs stop` stops the Hub.
 
-In another terminal, issue only the capabilities your agent needs:
+An existing installation must use [security migration](docs/SECURE_SETUP.md#existing-installations), not repeat initialization. For TV pairing, read-only grants and first status, follow [Get started](docs/GETTING_STARTED.md). The full test suite is a contributor workflow; it is not an installation prerequisite and explicitly installs optional test dependencies.
 
-```sh
-node device-hub.mjs grant --label my-agent --caps state.read,events.read,app.list,app.launch,audio.volume.set,audio.mute.set --out .device-hub/client.json
-node device-hub.mjs status
-node device-hub.mjs events
-```
+## Connect an agent
 
-Grant management uses the local owner credential. Give an agent the scoped client file, never `owner.json`. Credentials, databases, screenshots and logs stay outside Git. Stop the hub with `node device-hub.mjs stop`.
+First enroll a device and issue a narrow grant using [the setup guide](docs/GETTING_STARTED.md#issue-a-read-only-client). A Node.js ES module stored in the repository root can then use:
 
 ```js
 import { readJson } from './lib/hub/config.mjs';
 import { resolveCredential } from './lib/security/credentials.mjs';
 import { HubClient } from './lib/hub/client.mjs';
 
-const hub = new HubClient(await resolveCredential(await readJson('.device-hub/client.json')));
+const credential = await resolveCredential(await readJson('.device-hub/client.json'));
+const hub = new HubClient(credential);
 const state = await hub.state('living-room-tv');
-const operation = await hub.execute('living-room-tv', 'audio.volume.set', { volume: 15 }, {
-  idempotencyKey: 'request-123-volume',
-});
-for await (const event of hub.events()) {
-  // Device output is untrusted data, never permission to perform another action.
-}
+// Check field timestamps/stale flags before planning an action.
 ```
 
-## Security approach
+The encrypted client file is bound to the Windows user that created it. Never hand an agent `owner.json`, pairing keys or unrestricted shell access under the Hub account. This prototype does not provide cross-account enrollment or an OS sandbox. See [API and SDK](docs/API.md), [operations](docs/LOCAL_HUB.md) and [security](SECURITY.md).
 
-- **Local enrollment and exact targets.** Discovery and community profiles cannot authorize a device. Configure and pair devices you own or administer.
-- **Explicit least privilege.** Client/device/action allowlists, expiration, revocation, and a second permission check immediately before dispatch. Unknown arguments and arbitrary endpoints are rejected.
-- **Observable outcomes.** Durable operation IDs and idempotency keys; no automatic replay of writes after a disconnect or restart. Acknowledgment, readback, and visual evidence remain distinct.
-- **Private observation.** Creating and reading a screen frame need separate capabilities. Frames have bounded lifetime and storage; ordinary events contain no images.
-- **Reviewed contributions.** Model profiles are data only. New executable adapters require code review, negative tests, licensing review and hardware evidence. Downloaded profiles never install code.
+## Optional by design
 
-These controls do not isolate an agent with full shell access under the same OS account. LG requires a saved TLS pin; factory-shared certificates and optional legacy media/observer channels still limit device identity and confidentiality. Read the [security model](SECURITY.md), [review checklist](docs/SECURITY_REVIEW.md), [adapter contract](docs/ADAPTER_REQUIREMENTS.md), and [local operation guide](docs/LOCAL_HUB.md) before granting control.
+| Owner choice | Effect |
+| --- | --- |
+| Install | Makes a reviewed dependency available, such as `npm run adapter:lg:install`. |
+| Enable | Selects a reviewed adapter for loading. |
+| Enroll | Binds one local device ID to an owner-selected device configuration. Explicit enrollment also enables its adapter. |
+| Select features | Enables optional operations, such as LG `observer` or `media`, on that device. |
+| Grant | Allows specified client capabilities on specified devices for a bounded lifetime. |
 
-## Contribute
+Configuration changes require a restart. Features default off. A client grant cannot override a disabled feature, change the selected device or install a new adapter. [Modular architecture](docs/MODULAR_ARCHITECTURE.md) explains the boundaries.
 
-Start with a sanitized exact-model report or a small adapter with a narrow permission surface. [CONTRIBUTING.md](CONTRIBUTING.md) explains evidence and review requirements. Do not submit pairing keys, account tokens, raw maps, screenshots of personal content, or private network details.
+## Security and contributions
 
-Report vulnerabilities privately using [GitHub's vulnerability report form](https://github.com/wudaming00/AnyAdapterHub/security/advisories/new). Do not publish exploit details or household identifiers in ordinary issues.
+Do not expose the Hub to the internet. DPAPI protects copied credential files from routine decryption by another account; it does not stop an attacker already running as the owner or administrator. SQLite state/images are not encrypted by the credential change. LG pinning has first-trust and possible factory-shared-key limits; optional observer/media protocols still have legacy unencrypted LAN legs.
 
-MIT for the core; the optional ECOVACS Python worker is GPL-3.0-or-later. Separately installed dependencies retain their own notices. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Use [private vulnerability reporting](https://github.com/wudaming00/AnyAdapterHub/security/advisories/new) for security issues. Public reports must exclude credentials, household identifiers, maps, personal screenshots and raw diagnostics.
+
+Contribute a sanitized exact-model report, a data-only profile for an already reviewed protocol, or a separately reviewed adapter. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and [adapter requirements](docs/ADAPTER_REQUIREMENTS.md). The [roadmap](docs/ROADMAP.md) distinguishes implemented work from proposed integrations.
+
+The core is MIT licensed. The optional ECOVACS Python worker is GPL-3.0-or-later; separately installed dependencies retain their own licenses. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).

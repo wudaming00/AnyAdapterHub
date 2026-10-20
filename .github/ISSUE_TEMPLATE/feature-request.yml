@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a bounded capability or improvement with clear verification.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use the device compatibility form for tested model/firmware evidence and private reporting for vulnerabilities.
+        Do not include credentials, household identifiers, maps or personal screenshots. A request does not establish support or authorize access to a device.
+  - type: textarea
+    id: need
+    attributes:
+      label: User problem
+      description: Explain the concrete task and why the existing interface cannot complete it.
+    validations:
+      required: true
+  - type: textarea
+    id: capability
+    attributes:
+      label: Proposed behavior and scope
+      description: Describe the smallest device/action scope. For new devices, include vendor, exact model and known firmware, without instance identifiers.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Interface references and proposed verification
+      description: Link official protocol/API sources where available. Describe independent state/effect checks and how unknown outcomes should be reported; do not claim untested hardware support.
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Permission, privacy and failure boundaries
+      description: State required owner enrollment, minimum client capability, sensitive output and cleanup needs. Arbitrary shell/RPC passthrough and automatic replay of uncertain writes are outside the adapter contract.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy review
+      options:
+        - label: This request contains no credentials or household identifiers and does not claim unverified device support.
+          required: true

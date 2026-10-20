@@ -1,32 +1,73 @@
 name: Device compatibility report
-description: Submit exact model and firmware evidence without household identifiers.
+description: Report exact device scope and sanitized observations; this does not auto-enable support.
 body:
   - type: markdown
     attributes:
-      value: Do not attach credentials, IP/MAC addresses, device IDs, maps, personal screenshots or raw logs. Use private vulnerability reporting for security issues.
+      value: |
+        Read CONTRIBUTING.md and docs/CONTRIBUTOR_GUIDE.md first. Do not attach credentials, IP/MAC addresses, instance device/account IDs, local paths, maps, personal screenshots or raw logs. Use the private process in SECURITY.md for vulnerabilities. An unknown firmware can be reported honestly; do not invent a version to fit the model-profile schema. Do not run new physical actions merely to fill this form.
+  - type: dropdown
+    id: integration
+    attributes:
+      label: Integration
+      options:
+        - LG webOS (existing reviewed adapter)
+        - ECOVACS X11 (experimental existing adapter)
+        - Other device or protocol (proposal, not an existing adapter)
+    validations:
+      required: true
   - type: input
     id: model
     attributes:
       label: Vendor and exact model
+      description: Use the product model, not a serial number or household device identifier.
     validations:
       required: true
   - type: input
     id: firmware
     attributes:
       label: Exact firmware and software version
+      description: Include the full device-reported version and where you read it, or explicitly say unknown. No ranges, wildcards or latest.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and tested path
+      description: State OS/runtime, relevant region/protocol, reviewed adapter, enabled features and whether this used Hub, direct controller/MCP, worker or only a fixture. Do not include private configuration or identifiers.
+    validations:
+      required: true
+  - type: dropdown
+    id: evidence_type
+    attributes:
+      label: Evidence type
+      options:
+        - Authorized physical-device observation
+        - Offline fixture or simulation only
+        - Untested compatibility question
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
-      label: Capabilities and sanitized evidence
-      description: Separate command acceptance, state readback, and visible results; describe restoration and limitations.
+      label: Per-capability result
+      description: List each fixed action/capability, bounded steps, date, request acceptance, fresh readback, visible or physical effect, and what remains unknown. A playing state or command ACK is not task completion.
+    validations:
+      required: true
+  - type: textarea
+    id: restoration
+    attributes:
+      label: Restoration, cleanup and limits
+      description: Describe restoration of settings/application, cleanup verification or failures, and tests you did not perform. Use not applicable where appropriate. Do not silently retry ambiguous physical effects.
     validations:
       required: true
   - type: checkboxes
     id: privacy
     attributes:
-      label: Privacy review
+      label: Ownership, privacy and evidence review
       options:
-        - label: I tested a device I own or administer and removed household identifiers and credentials.
+        - label: Any physical testing was explicitly authorized for a device I own or administer; otherwise I labeled this untested or fixture-only.
+          required: true
+        - label: I removed credentials, instance identifiers, addresses, private paths, maps and personal images; no raw diagnostics are attached.
+          required: true
+        - label: I separated observed facts from assumptions and did not claim other models, firmware or capabilities were verified.
           required: true

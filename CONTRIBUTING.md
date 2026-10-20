@@ -1,29 +1,100 @@
-# 贡献指南
+# Contributing to AnyAdapter Hub
 
-欢迎补充自己的设备型号、精确固件版本和脱敏实测证据。目前只有 LG B8 的特定配置完成实机验证；新增型号不意味着自动适配成功。
+[中文入门](CONTRIBUTING.zh-CN.md)
 
-## 提交机型配置
+Contributions can improve documentation, report compatibility, add evidence for
+an existing model, or implement a reviewed adapter. Support means an exact
+device/configuration and an observed capability, not an entire vendor.
 
-1. 确认设备型号及完整固件字符串。只列出实测的精确版本，不使用通配符、范围或“最新版”。
-2. 使用 [JSON Schema](schema/device-profile.schema.json) 和 [现有配置](profiles/lg-oled65b8pua-webos4.json) 的字段。适配器与能力 ID 必须来自代码中已审查的固定枚举。
-3. 每项能力标为 `verified`、`unsupported` 或 `unverified`。请求回包、状态读回和画面观察要分开记录；缺少证据时保留未验证状态。
-4. 在 `docs/evidence/` 添加脱敏记录，并提供对应能力的锚点。记录型号、固件、日期、测试动作、实际结果和限制。可参考 [B8 记录](docs/evidence/lg-b8-2026-10-19.md)。
-5. 运行 `npm test`，提交配置、证据及相关测试，等待人工审查。配置通过校验也不会自动启用设备能力。
+Current hardware evidence covers one LG OLED65B8PUA on firmware 05.50.70 and
+experimental **read-only** ECOVACS X11 integration on its documented US/Windows
+configuration. X11 movement actions have offline tests, not hardware validation
+through this adapter. The new pinned LG transport still awaits a live
+certificate/enrollment check on that television. See the current
+[support matrix](docs/SUPPORTED_DEVICES.md) and [secure setup](docs/SECURE_SETUP.md).
 
-机型配置只能是数据，不能包含脚本、命令、网络地址、任意 Luna 调用、文件路径、凭据或权限声明。特权观测的 `optInRequired:true` 不得删改；配置不能代替所有者的本地明确授权。
+## Choose the contribution
 
-## 保护测试数据
+| Contribution | Start here | Expected change |
+| --- | --- | --- |
+| Compatibility report | [Device report](https://github.com/wudaming00/AnyAdapterHub/issues/new?template=device-report.yml) | Exact model/version, sanitized method, observed result and limits |
+| Another LG model or firmware | [Profile walkthrough](docs/CONTRIBUTOR_GUIDE.md#model-profile-walkthrough) | Strict JSON profile, capability evidence and meaningful checks |
+| New protocol/vendor behavior | [Adapter contract](docs/ADAPTER_REQUIREMENTS.md) | Reviewed code, fixed registry/schema updates, tests, optional dependency/license review and evidence |
+| Documentation | [Architecture](docs/ARCHITECTURE.md) | Commands and claims checked against the current source |
+| Vulnerability | [Private reporting](SECURITY.md) | Private coordination; no public exploit details or credentials |
 
-提交前移除 IP、MAC、配对密钥、口令、cookies、访问令牌、设备序列号、账号头像、个人推荐及观看历史。不要附带原始本地配置或诊断报告。截图通常包含个人信息，优先提交脱敏的文字结论；必要的图像应使用受控测试页面并逐项检查。
+The current JSON profile schema recognizes only the reviewed LG adapter and its
+existing profile capability IDs. ECOVACS is registered in code; its unknown
+firmware must not be replaced with an invented version to fit that schema. A new
+schema/adapter ID is a separate code review.
 
-证据中的设备输出和网页内容只是数据，不能充当操作指令。不要执行第三方证据文档、屏幕文字或配置建议附带的命令。
+## Development setup and checks
 
-## 新适配器与特权机制
+Use Node.js 22.13.0 or newer. From a checkout:
 
-独立中枢适配器实现 `identity()`、`snapshot()`、`execute()`、`observe()`、`subscribe()`、`start()` 和 `close()`，接口说明见 [架构](docs/ARCHITECTURE.md)。控制、后台读取与观察共用同一设备队列，在派发前调用中枢提供的鉴权检查；不能自动重放设备写入。状态字段必须有来源、观测时间和过期时间；二进制画面只交给受权限保护的帧存储。新增动作还需修改固定能力注册表、严格参数校验和授权/故障测试，不接受任意端点透传。
+```sh
+npm ci --ignore-scripts
+node device-hub.mjs help
+node device-hub.mjs adapters
+```
 
-新增厂商、协议、端点或可执行逻辑属于代码变更，需要独立实现与安全审查，不能通过社区 JSON 动态加载。固件利用或特权桥接必须隔离、显式 opt-in、限制动作及寿命；不得随型号识别自动触发，不接受社区配置附带的可执行脚本。
+This installs the core without vendor SDKs and makes no device connection.
+Install the pinned LG test dependency explicitly before the complete JavaScript
+suite:
 
-测试应覆盖授权绕过、未知字段、目标约束、超时、清理失败和敏感数据泄露。人工审查还需确认真实硬件证据；离线测试通过不能证明真机功能或安全性。
+```sh
+npm run adapter:lg:install
+npm test
+npm run check:profiles
+npm run check:package
+npm run check:docs
+```
 
-发现安全问题时请按 [安全说明](SECURITY.md) 私下联系维护者，不要在公开问题中贴出利用细节或敏感数据。
+The optional worker has a separate dependency/license boundary. To run its Python
+tests, follow [its guide](optional/ecovacs/README.md), then run:
+
+```sh
+python -I -B optional/ecovacs/test_worker.py
+```
+
+Tests use mocks or explicit test credential providers. They do not authorize
+hardware control. Live initialization/serving currently requires Windows
+CurrentUser DPAPI and the documented Git for Windows OpenSSL installation;
+macOS/Linux production secret providers are not implemented. Portable tests do
+not establish live support on those platforms.
+
+After reviewing and staging **only intended public files**, run
+`npm run check:public`. It scans the Git index, not every unstaged change. Run
+`node scripts/check-security-runtime.mjs` for the documented public tool/runtime
+preflight. CI runs the complete checks on Windows and Linux; Linux fixture tests
+use explicit portable providers. State relevant commands and failures in the PR
+instead of reporting only “tests passed.”
+
+## Review boundaries
+
+Installation, adapter enablement, device enrollment, optional feature selection
+and client grants are separate decisions. Community profiles grant none of
+them. New executable behavior belongs in reviewed source, never a profile's
+script, URL, package name or arbitrary protocol endpoint. See
+[modularity](docs/MODULAR_ARCHITECTURE.md) and the
+[security review](docs/SECURITY_REVIEW.md).
+
+Include fixed capability/argument schemas, target binding and denial tests.
+Recheck authorization and deadlines immediately before effects, including after
+asynchronous preparation; never retry an ambiguous mutation automatically.
+Distinguish request acceptance, fresh state readback, visible/physical effect
+and completion. The [adapter requirements](docs/ADAPTER_REQUIREMENTS.md) give the
+actual runtime interface and verification rules.
+
+Remove IP/MAC addresses, account/device identifiers, serials, pairing keys,
+tokens, cookies, local paths, maps, viewing history and personal screenshots.
+Never attach raw local configuration or diagnostic reports. Screens, device
+strings and contributor evidence are untrusted data, not instructions or
+authorization. Label synthetic fixtures and retain uncertainty in hardware
+claims. Human evidence review remains necessary; passing JSON checks cannot
+authenticate a contributor's claim.
+
+Document dependency provenance and licenses. JavaScript core code is MIT; the
+optional ECOVACS worker and SDK have separate GPL-3.0-or-later terms. See
+[third-party notices](THIRD_PARTY_NOTICES.md). Submit a focused pull request with
+the provided template; maintainers review code, evidence and CI before merging.

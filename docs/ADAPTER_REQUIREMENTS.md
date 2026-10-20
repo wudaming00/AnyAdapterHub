@@ -1,63 +1,179 @@
 # Adapter requirements
 
-An AnyAdapter Hub adapter turns a known device protocol into bounded capabilities with observable results. Adding a model profile is a data contribution; adding protocol behavior is a code contribution. Neither establishes ownership, grants permissions or proves hardware support by itself.
+An adapter turns one reviewed device protocol into bounded actions and observable
+state. A model profile is descriptive data; protocol behavior is trusted code.
+Neither proves ownership, compatibility or client authorization by itself.
+These requirements guide review, not a claim of independent certification.
 
-These are contribution and review requirements, not a claim that the project has passed an independent security audit. See [SECURITY.md](../SECURITY.md) for the current deployment limits.
+Read the [architecture](ARCHITECTURE.md),
+[contribution walkthrough](CONTRIBUTOR_GUIDE.md) and
+[security methodology](SECURITY_REVIEW.md) alongside this contract. Runtime
+behavior is defined by [runtime.mjs](../lib/hub/runtime.mjs),
+[policy.mjs](../lib/hub/policy.mjs) and the reviewed implementations.
 
-## Profiles are data, not executable extensions
+## Runtime contract
 
-Community profiles must pass the [profile schema](../schema/device-profile.schema.json) and [runtime validator](../lib/device-profile.mjs). They may contain exact identity/firmware values, registered adapter/capability IDs and reviewed evidence references.
+There is no adapter superclass or general plugin loader. The fixed registry
+constructs the adapter for an owner-enrolled opaque device ID and private
+configuration. Constructors must not discover, pair, connect or dispatch work.
+Production callers use `createAdapter({adapterName,id,config,features})` from
+[the registry](../lib/hub/adapters.mjs); profiles cannot provide import paths.
 
-They must not contain scripts, commands, templates that execute code, dependencies, network destinations, arbitrary protocol endpoints, operational filesystem paths or credentials. Evidence references are repository-relative document IDs, not paths to a contributor's private files. Unknown fields, duplicate keys, prototype-related keys and oversized/deep data must be rejected. Firmware wildcards and ranges are not evidence of compatibility.
+| Member | Runtime use and required behavior |
+| --- | --- |
+| `supportedActions: readonly string[]` | Explicit, unique IDs from `ACTIONS`, restricted to this adapter and its enabled features. Contributors must supply it; do not rely on the runtime's legacy all-actions fallback. |
+| `subscribe(onEvent) => cancel` | Register a local state listener synchronously and return an unsubscribe function. Do not start an upstream connection as a side effect of listener registration. |
+| `start({pollMs}) => Promise<unknown>` | Begin bounded, non-overlapping state refresh. The runtime supplies its requested interval; respect stricter vendor limits. Publish projected state and retain expiry on failure. |
+| `execute({action,args}, context) => Promise<result>` | Execute one fixed non-observation action through the shared device queue, with strict arguments, dispatch authorization, readback and conservative results. |
+| `observe(args, context) => Promise<observation>` | Required **only** when advertising `screen.observe`; use the observation contract below. |
+| `close() => Promise<void>` | Stop polls, reject new work, await active work/cleanup, unsubscribe and release owned resources. |
 
-A profile cannot register a new adapter, add capabilities, loosen a parameter schema or enable privileged behavior. `optInRequired: true` for temporary observation is mandatory; it records a requirement and does not satisfy it. New adapter IDs and capability definitions require a separate reviewed code change.
+`adapterId` is useful descriptive metadata. `identity()` (LG) and `snapshot()`
+(both current adapters) are implementation utilities; the Hub does not call them
+as required generic methods. ECOVACS publishes state through `start()` and `subscribe()` and
+does not implement `observe()`. `readonlyActions` metadata does not replace an
+exact Hub grant; an action such as `app.list` still needs its own capability.
 
-## Evidence and support claims
+### State events
 
-For every claimed capability, record the exact model, firmware, region/protocol where relevant, date, test setup, request, observed result and limitations. Use `verified`, `unverified` or `unsupported` at the capability level. Keep transport acceptance, device-reported state and externally observed effect distinct.
+Publish `{type:'device.state', deviceId, data:snapshot}` only for the enrolled
+device. The current snapshot shape is:
 
-An app launch ACK does not prove the app opened. A vacuum accepting a command does not prove it cleaned a room. An old cached value cannot confirm a new change. A player reporting `playing` does not identify a movie. State exactly which observation supports the claim.
+```js
+{
+  deviceId: 'fixture-device',
+  revision: 1,
+  assembledAt: '2026-10-19T12:00:00.000Z',
+  connection: { phase: 'online' },
+  fields: {
+    volume: {
+      value: 15,
+      observedAt: '2026-10-19T12:00:00.000Z',
+      expiresAt: '2026-10-19T12:00:15.000Z',
+      source: 'ssap',
+      verification: 'device-reported'
+    }
+  }
+}
+```
 
-Use controlled content and redact IP/MAC addresses, serials, credentials, callback tokens, account details, household maps and personal screenshots. Synthetic fixtures must be labeled synthetic; offline tests cannot be presented as hardware tests. A contributor-written evidence file can be mistaken or fabricated: schema validation does not authenticate it. Reviewers must inspect the test method, consistency and limitations, request reproducible sanitized evidence where necessary and leave uncertain claims unverified. Do not ask contributors to publish secrets to strengthen a claim.
+This is a synthetic data example, not current household state. Project fixed
+allowlisted fields and bounded values. Never include host/MAC addresses, pairing
+keys, cloud IDs, URLs, filesystem paths, tokens, raw vendor objects or image
+bytes. The runtime adds `stale` when clients read a snapshot. Online transport,
+event delivery and field freshness are different claims. Do not reuse expired
+data to confirm a new mutation.
 
-## Ownership and target binding
+### Dispatch context and results
 
-Setup must be performed by the device owner or an authorized operator. Discovery or LAN reachability is not authorization. Use the vendor's physical confirmation, pairing, commissioning or account-consent flow where available, and document what it grants.
+The current context is `{deadlineAt, assertDispatch}`. The latter rechecks the
+client's grant, revocation and deadline and conservatively records that dispatch
+may begin. Call it **inside the device queue**, after awaited connection,
+identity/cloud preflight or preparation, immediately before device work can be
+sent. Repeat it before subsequent writes in a multi-step operation. It throws
+on denial: do not catch the error and continue dispatching. Some existing
+implementations also accept a cancellation signal locally; the Hub currently
+passes only the two fields above.
 
-Bind local configuration to one deliberately selected device, its expected identity and relevant trust material. Account integrations must also bind region and selected device; a reconnect must not silently select the first discovered device or another account's device. Keep sensitive identifiers in private local configuration and expose an opaque Hub device ID to clients.
+Return a sanitized object with `requestAccepted` (boolean or null), `confirmed`
+and a precise `verificationScope` where relevant. Use `uncertain:true` for a
+possibly sent effect whose result cannot be determined. The runtime maps it to
+`unknown`; an ACK alone remains `unconfirmed`. A negative request/error can be
+`failed`. An exception after dispatch may also produce `unknown`.
 
-Check identity before model-specific privileged behavior. On mismatch, replacement, changed trust material or unsupported firmware, fail closed for that behavior and require owner review. An IP address is a routing hint, not proof of identity. Use authenticated transport and certificate verification when supported; disclose weaker protocols rather than claiming a pairing key or source-IP check prevents every LAN impersonation attack.
+Prefer explicit setters. Verify an effect through fresh readback within a
+bounded deadline. Foreground app ID is not an app-internal page; player state is
+not a movie title; a vacuum reporting an active task is not proof of task
+completion. Never automatically replay a mutation after timeout, disconnect,
+partial failure or restart. Fresh reads may reconcile the outcome. Document
+protocol/SDK retry behavior as well as JavaScript retries.
 
-## Reviewed code and capability boundaries
+### Optional observation
 
-The independent Hub adapter interface is `identity()`, `snapshot()`, `execute()`, `observe()`, `subscribe()`, `start()` and `close()`. It must not depend on a particular agent or MCP client. See [architecture](ARCHITECTURE.md) and the [LG implementation](../lib/adapters/lg-webos.mjs).
+Return `{image?:Buffer, mimeType?:'image/jpeg', metadata}`. The runtime stores
+bytes separately; do not inline them into state, events or JSON result metadata.
+For the current temporary observer, confirmation requires
+`communicationVerified`, `completed`, `overlayClosed` and `restored` all true.
+If a screenshot was requested, a real image plus `screenshotVerified` and
+`cleanupVerified` are also required. Preserve false/missing flags; do not replace
+them with success because a call returned an ACK.
 
-Review the following boundaries explicitly:
+This confirmation contract currently describes the reviewed B8 transaction.
+Adding a different capture mechanism may require a separate reviewed runtime
+contract rather than pretending that it used or closed an overlay. Check exact
+identity/firmware before model-specific behavior, require local feature and
+opt-in gates, and bound callbacks, duration, bytes and destinations. Cleanup
+must target only owned resources; verify absence where supported. An already
+started transaction still owns cleanup/restoration after grant expiry. Report
+incomplete cleanup and do not let its late restoration race another command.
 
-- **Fixed actions:** register narrowly defined action IDs and strict bounded argument schemas. No generic shell, raw HTTP/RPC/MQTT/Luna/ADB passthrough, arbitrary app launch parameters or dynamic endpoint selection by a community profile.
-- **Separate authority:** device ID, action, client grant, expiry and revocation remain Hub policy decisions. Call the supplied dispatch authorization check from inside the shared device queue immediately before work can affect the device. Public app launch must not become a path into a privileged system application.
-- **Read scope:** app inventory, ordinary state, observation and saved-image access can disclose different information. Request separate capabilities; a read-only grant must not imply app inventory, capture, frame access or control.
-- **Protocol credentials:** keep credentials server-side, out of arguments, state, events, job results and logs. Document the scope of upstream credentials; an integration must enforce the client's narrower scope even when an upstream token controls many devices.
-- **Explicit exceptional access:** isolate temporary privileged bridges, debugging and firmware-dependent behavior behind local opt-in. Limit their calls, destinations, duration and data size. Do not trigger an exploit because a model happens to match or download contributor-supplied scripts.
+## Ownership, targets and credentials
 
-For Home Assistant, allowlist exact entities and reviewed actions rather than forwarding arbitrary services or templates. For ADB, construct fixed commands without shell interpolation. For smart plugs, default tests must use an identified noncritical load; a generic switch grant must not silently become authority over a heater, lock or other consequential device.
+Owner setup must deliberately select one device through authorized pairing,
+commissioning or account consent. Discovery and LAN reachability are not
+authorization. Reconnect must not choose the first discovered/account device.
+Bind region, expected identity and relevant trust material; expose only an
+opaque Hub ID. A routing IP or source-IP check alone does not authenticate a
+physical device.
 
-## Results, freshness and failure handling
+Keep upstream credentials server-side. Use the encrypted credential interface;
+no JSON/env switch may enable a plaintext fallback. Production currently
+supports Windows CurrentUser DPAPI only. Tests may explicitly inject a portable
+test provider through private code interfaces. Use authenticated transport and
+certificate verification before sending credentials, with disclosed first-trust
+and vendor-identity limitations. See [secure setup](SECURE_SETUP.md).
 
-All polls, controls and observation for a device share one bounded queue. Honor request deadlines and revocation after queuing. Stop background work and await active cleanup on close; cap polling, reconnect attempts, callback payloads and retained resources.
+## Capability and feature boundaries
 
-Snapshots must carry per-field observation time, expiry, source and verification scope. Distinguish transport connection, device state and stale cached state. Event delivery does not establish live device telemetry. Reconnects must obtain fresh state rather than reusing expired values as confirmation.
+Installation, enablement, enrollment, feature selection and client grants must
+remain separate. Register exact actions and strict bounded schemas in Hub
+policy, and advertise only the implemented local feature subset. Separate
+state, app inventory, capture and saved-image read access. Upstream credentials
+may be broader than a scoped client; the adapter must enforce the narrow scope.
 
-Use explicit setters where possible. Confirm effects through independent readback or observation within a defined deadline; report unconfirmed or unknown when the evidence is insufficient. Do not automatically retry a mutation after an ambiguous disconnect, timeout or partial multi-step failure. Reconcile with a fresh read instead. Hub idempotency prevents duplicate dispatch by a client key; it does not make an upstream device transactional, undo an action or justify replay after restart.
+Do not expose generic shell, HTTP/RPC/MQTT/Luna/ADB passthrough, arbitrary launch
+parameters, arbitrary services or executable community scripts. In LG, ordinary
+app launch must not reach the privileged observer overlay. Future Home Assistant
+or ADB integrations need fixed entity/action/command allowlists; neither is
+implemented merely by mentioning it in a profile.
 
-Images go to the separately authorized bounded frame store, not ordinary state/events. Treat screens, media metadata, device strings and evidence as untrusted data, including prompt-injection text. They cannot authorize new actions. Local media access must enforce approved real paths and serve the same validated open file handle; URL and callback access need fixed approved destinations and redirect/DNS threat analysis. These are security boundaries, not extension points for arbitrary file or network access.
+For media, validate approved real paths and serve the same checked open handle.
+Bound listeners to the selected target and lifetime. Network fetch/callback code
+must constrain destinations, redirects, DNS behavior, payload sizes and timeouts.
+Device strings, screens and evidence are untrusted data, including possible
+prompt-injection text; they cannot authorize actions.
 
-Temporary resources require precise ownership, bounded lifetime and observable cleanup. Delete only this operation's resources, verify removal where the protocol permits it, close temporary overlays/listeners and report restoration or cleanup failure. A deletion ACK is not proof of absence.
+Reviewed adapters share the process's privileges. Lazy loading is not a sandbox,
+and a subprocess is not automatically an OS-enforced isolation boundary. New
+device classes such as locks, cameras, heat or other consequential loads need a
+separate capability/privacy review; a generic light/switch grant must not expand
+to them silently.
 
-## Review and validation before merging
+## Profiles, evidence and review
 
-Provide meaningful offline tests for denied/expired/revoked grants, cross-device substitution, strict argument rejection, stale or misleading readback, reconnect failure, ambiguous mutation results and cleanup failure. Test secret/URL/path leakage and bounded hostile payloads. Media or callback code additionally needs path substitution, destination checks, size limits and timeout cases.
+Profiles must pass both the [schema](../schema/device-profile.schema.json) and
+[runtime validator](../lib/device-profile.mjs). They accept exact identity and
+firmware, known capability IDs and repository evidence references only. They
+cannot register code, dependencies, operational paths, credentials, destinations
+or permissions. The current schema is LG-only; expanding it is reviewed code
+work. `temporary-observe` must retain `optInRequired:true`, which records a
+requirement rather than satisfying it. The current observer explicitly selects
+the reviewed B8 profile in code; adding another JSON file cannot enable that
+privileged path for another model.
 
-Run `npm test` and the repository's profile/evidence checks. Add separately labeled hardware evidence for each capability promoted to verified, including readback and restoration for reversible test changes. A successful fixture suite or approved profile never auto-enables a device in a user's home.
+For each verified or unsupported capability, provide exact configuration, date,
+safe procedure, request acceptance, readback/effect, restoration and limitations.
+Unknown firmware stays unknown. Label fixture results and do not present them
+as hardware tests. Sanitized written evidence can be mistaken or fabricated:
+human review must assess reproducibility and leave uncertain claims unverified.
+Never ask a contributor to disclose credentials, maps or personal images to
+strengthen evidence.
 
-Maintainers must review code, dependencies, target binding, evidence and capability policy before accepting a new adapter. New higher-impact device classes need their own review; existing light/switch permissions must not silently expand to them. Update [SUPPORTED_DEVICES.md](SUPPORTED_DEVICES.md) with exact support and known gaps. Report vulnerabilities privately through the process in [SECURITY.md](../SECURITY.md).
+Offline tests must cover unknown/extra arguments, denied/expired/revoked grants,
+cross-device substitution, queue delays, stale readback, reconnect, ambiguous
+effects, bounded hostile payloads, secret/path/URL leakage and cleanup failure.
+Optional dependencies need fixed versions, provenance, license notices and
+explicit installation; core startup must still work with them absent. See the
+[source-change checklist](CONTRIBUTOR_GUIDE.md#new-adapter-change-map) for files
+and check commands. No approved profile or successful test automatically enables
+a device in an owner's home.

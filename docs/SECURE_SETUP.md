@@ -15,7 +15,12 @@ Tests do not establish live support for another OS.
   executable and private process pipes, never secret command-line arguments.
 - The Hub certificate is generated with the fixed trusted Git for Windows
   OpenSSL executable. Private material stays in pipes/memory before DPAPI
-  protection. Git/OpenSSL must be installed in the documented default location.
+  protection. The fixed supported Windows paths are
+  `C:\Program Files\Git\mingw64\bin\openssl.exe` or
+  `C:\Program Files\Git\usr\bin\openssl.exe`, in that order. Native and MSYS
+  builds receive a fixed non-secret OpenSSL configuration over stdin; no user
+  `openssl.cnf`, temporary private-key file or shell is used. The program does not
+  search a caller-controlled PATH or download a missing executable.
 - The Hub binds only `https://127.0.0.1:8765`. A scoped client trusts its exact
   local certificate and checks the SHA-256 certificate pin, validity and hostname
   before sending its Bearer token. Grant hashes remain in SQLite. Device and
@@ -37,8 +42,12 @@ future untrusted adapters; this repository does not supply that sandbox.
 
 ## Existing installations
 
-Stop the old daemon before migrating. Keep the existing private directory and
-pairing files in place; do not print or upload their contents. Then run:
+Stop the old daemon from its original terminal with Ctrl+C, or through the
+launcher that started it, before updating the source. An old version's working
+`stop` command is another option before upgrade. The current CLI deliberately
+does not fall back to reading a plaintext owner token to stop an old daemon.
+Keep the existing private directory and pairing files in place; do not print
+or upload their contents. From the updated source, run:
 
 ```sh
 node device-hub.mjs migrate-security --tv-config .lg-tv.local.json --legacy-tv-config .lg-tv.legacy.local.json
@@ -71,7 +80,9 @@ Migration overwrites current configuration files. It does not erase historical
 backups, crash dumps, previous exports, filesystem snapshots or SSD remnants.
 Lost DPAPI profiles cannot be recovered from these ciphertext files alone;
 re-enrollment is needed. Do not copy encrypted client files to another OS user
-and expect them to work. Create separately enrolled credentials for that identity.
+and expect them to work. Cross-account credential enrollment or transfer is not
+implemented. API-level grants on this same-user prototype must not be mistaken
+for a sandbox for an agent with unrestricted OS access.
 
 ## New installations and optional features
 
@@ -86,10 +97,10 @@ enroll LG explicitly:
 
 ```sh
 npm run adapter:lg:install
-node lg-tv.mjs certificate --host <TV_LAN_IP>
+node lg-tv.mjs certificate --host '<TV_LAN_IP>'
 # Review the first-observed fingerprint on your trusted network.
-node lg-tv.mjs pair --host <TV_LAN_IP> --certificate-pin <SHA256_HEX> --profile control
-node device-hub.mjs add --tv-config .lg-tv.local.json --host <TV_LAN_IP>
+node lg-tv.mjs pair --host '<TV_LAN_IP>' --certificate-pin '<SHA256_HEX>' --profile control
+node device-hub.mjs add --tv-config .lg-tv.local.json --host '<TV_LAN_IP>'
 node device-hub.mjs serve
 ```
 
@@ -117,15 +128,15 @@ general cloud-token broker for arbitrary community plugins.
 ## SDK credential loading
 
 ```js
-import { readJson } from '../lib/hub/config.mjs';
-import { resolveCredential } from '../lib/security/credentials.mjs';
-import { HubClient } from '../lib/hub/client.mjs';
+import { readJson } from './lib/hub/config.mjs';
+import { resolveCredential } from './lib/security/credentials.mjs';
+import { HubClient } from './lib/hub/client.mjs';
 
 const hub = new HubClient(await resolveCredential(await readJson('.device-hub/client.json')));
 const state = await hub.state('living-room-tv');
 ```
 
-Decrypt only a scoped client credential. Never give an agent the owner credential,
+Store this ES module in the repository root. Decrypt only a scoped client credential. Never give an agent the owner credential,
 pairing key or unrestricted shell under the Hub's OS account. Tests have explicit
 code-only injected transports/providers; no profile, CLI flag or environment
 setting selects a plaintext production fallback.

@@ -1,143 +1,192 @@
-# 本地 Device Hub
+# 本地运行与维护
 
-当前安全版本使用 Windows 当前用户 DPAPI 加密凭据和固定证书 HTTPS；旧安装需先按[加密迁移说明](SECURE_SETUP.md)迁移。适配器和增强功能按需启用；Linux/macOS 尚无生产密钥存储后端。
+本指南对应当前的 **Windows DPAPI + 固定证书 HTTPS** 版本。首次安装见 [Get started](GETTING_STARTED.md)，旧安装见[加密迁移](SECURE_SETUP.md#existing-installations)，协议细节见 [API/SDK](API.md)。
 
-AnyAdapter Hub 是独立进程。CLI、Node SDK 或后续 Collie 客户端都通过本地 HTTPS API 使用它。它不依赖某个 Agent，也不会自动配对电视、修改固件、取得 root 或安装系统开机任务。
+中枢是独立本地进程；不依赖 Agent 框架，不自动发现、配对、安装 SDK 或建立系统开机任务。默认地址为 `https://127.0.0.1:8765`。下列命令从仓库根目录运行；可选操作仅用于你拥有或获授权管理的设备。
 
-以下说明对应当前代码行为。单台 B8 的 Hub HTTP 链路已有有限真机验证，具体范围见文末；不能据此宣称全部能力或其他设备都已验证。
-
-## 初始化与启动
-
-需要支持 `node:sqlite` 的 Node.js 22.13+、已安装的项目依赖，以及已经明确配对的电视配置。先查看命令：
+## 启动、停止和目录
 
 ```powershell
-node device-hub.mjs help
+node device-hub.mjs serve
+node device-hub.mjs stop
 ```
 
-用自己的已配对配置和电视地址替换尖括号内容，再运行一次初始化：
+`serve` 占用当前终端；在另一项目终端执行 `stop`。停止需要 owner 凭据，会阻止新派发并关闭连接、完成已开始观察的受限清理；不是取消已经被设备接受的效果。
+
+`init` 只能用于新的或空的专用目录，不能用来重置已存在的中枢。不要直接删除数据库以解决一次请求失败：幂等历史丢失后，重发旧操作可能再次产生效果。
+
+| 私有文件 | 用途 |
+| --- | --- |
+| `hub.json` | 登记的设备引用、启用的适配器、每台设备的功能选择。 |
+| `owner.json` | DPAPI 加密的所有者令牌与公开 TLS 信任信息。 |
+| `identity.json` | DPAPI 加密的 Hub TLS 私钥、证书与指纹。 |
+| 自选客户端 JSON，例如 `client.json` | 指定客户端的加密令牌、grant ID 与 Hub 证书。 |
+| `state.sqlite` 及其 WAL/SHM | 状态、事件、操作和受限保留的帧；此数据库内容未由凭据加密功能加密。 |
+| `process.json` | 进程与监听信息；不是独立的身份或安全凭据。 |
+
+原 LG 配对文件仍在登记时指定的路径，Hub 保存引用而不是复制一个可随意分享的登录。不要移动、上传或公开这些文件。若选择自定义 `--home`，所有命令都要传同一路径，授权输出必须直接位于该 home 中。自定义目录不一定匹配仓库的忽略规则；建议选仓库之外的专用私有目录。
+
+## 安装、启用、登记、功能、授权
+
+五层操作的边界见[模块架构](MODULAR_ARCHITECTURE.md)。更改登记、启用状态或功能后重启服务；不会热加载社区脚本。
 
 ```powershell
-node device-hub.mjs init --tv-config "<已配对配置文件>" --host "<电视局域网地址>" --id living-room-tv
+node device-hub.mjs adapters
+node device-hub.mjs stop
+node device-hub.mjs disable --adapter lg-webos
 node device-hub.mjs serve
 ```
 
-默认私有目录为 `.device-hub`，默认端口为 8765。`init` 保存已有电视配置的引用，并建立所有者凭据；重复初始化不会覆盖现有凭据。`serve` 保持在前台运行，仅监听本机回环地址。停止时等待正在执行的事务清理，再关闭适配器。
-
-私有目录中的凭据和数据库不要提交或共享。普通客户端不需要原始电视配对密钥，也不应拿到所有者凭据。
-
-所有者可以运行 `node device-hub.mjs stop` 停止服务。此操作会立即阻止新派发，等待已执行事务的清理，再关闭设备连接。普通客户端不能关闭中枢。
-
-## 给客户端最小授权
-
-服务运行后，在另一个终端签发只读客户端凭据：
+禁用保留登记与凭据，但重启后不加载该适配器，也不读取它的设备配置。另一独立终端可再次停止服务并恢复：
 
 ```powershell
-node device-hub.mjs grant --label cli-read --caps state.read,events.read --device living-room-tv --out .device-hub/client.json --hours 24
+node device-hub.mjs stop
+node device-hub.mjs enable --adapter lg-webos
+node device-hub.mjs serve
+```
+
+启用不负责安装依赖或登记设备。LG 依赖需由所有者明确执行 `npm run adapter:lg:install`；ECOVACS 使用[单独安装的 worker](ECOVACS_X11.md)。空中枢也可以启动，设备清单为空；它不会因此扫描网络。
+
+新增设备使用 `add`，而不是再次 `init`。例如已完成配对后：
+
+```powershell
+node device-hub.mjs stop
+$tvHost = '<TV_LAN_IP>'
+node device-hub.mjs add --tv-config .lg-tv.local.json --host $tvHost --id living-room-tv
+node device-hub.mjs serve
+```
+
+设备 ID 不能重复，现有登记不能通过 `add` 静默替换。云设备不能用命令行 host 改变目标。当前没有设备删除、动态插件安装或通用配置管理 API；本地修改登记也必须保留精确目标绑定。
+
+## 签发只读授权
+
+服务运行后，在另一个终端：
+
+```powershell
+node device-hub.mjs grant --label status-reader --device living-room-tv --caps state.read,events.read --hours 24 --out .device-hub/client.json
 node device-hub.mjs status --device living-room-tv
 node device-hub.mjs capabilities --device living-room-tv
 node device-hub.mjs events --after 0
 ```
 
-CLI 普通命令默认读取 `.device-hub/client.json`；授权管理命令默认使用所有者凭据。令牌写入私有文件，不打印到终端。`events` 持续输出 SSE 事件，按 Ctrl+C 结束。
+令牌不打印。输出文件必须不存在并且直接位于私有 home 内；CLI 默认使用 `.device-hub/client.json`，自定义文件需加 `--credential FILE`。默认设备 ID 为 `living-room-tv`，其他设备必须传 `--device`。
 
-控制权限要另行签发。例如只授权音量与静音：
+默认 grant 为 24 小时，CLI 允许最多 30 天。权限到期后需要签发新 grant，不能覆盖旧文件假定权限已经续期。加密文件绑定创建它的 Windows 用户，跨账户登记或安全令牌转移流程尚未实现。
+
+## 单独授权控制
+
+只签发计划使用的能力。例如音量和静音：
 
 ```powershell
-node device-hub.mjs grant --label audio-client --caps state.read,audio.volume.set,audio.mute.set --device living-room-tv --out .device-hub/audio-client.json --hours 24
-node device-hub.mjs call --device living-room-tv --action audio.volume.set --args '{"volume":15}' --key volume-example-1 --credential .device-hub/audio-client.json
+node device-hub.mjs grant --label audio-client --device living-room-tv --caps state.read,audio.volume.set,audio.mute.set --hours 1 --out .device-hub/audio-client.json
 ```
 
-查询和撤销授权：
+随后的一次控制会改变电视状态，仅在明确需要时运行：
+
+```powershell
+node device-hub.mjs call --device living-room-tv --action audio.volume.set --args '{"volume":15}' --key example-volume-request-1 --credential .device-hub/audio-client.json
+```
+
+PowerShell 将 JSON 作为单个参数传入；其他 shell 的引号方式不同。SDK 能直接传对象，减少命令行转义。不要把口令或令牌放进 `--args`。
+
+同一客户端、设备与幂等键的同一动作及参数返回原操作；更换参数会冲突。请求超时后查询原 operation，不能为了“确保执行”换新 key 反复重发。派发后的不确定状态应由读回和所有者判断处理。
+
+`--caps all` 只是签发时当前能力清单的快照，不是未来通配授权，也不能开启关闭的增强功能。应用清单需要 `app.list`，`state.read` 不隐含它。通用遥控、输入和点击可能操作应用中的购买或设置，不能视为无风险的普通读取。
+
+## 查询和撤销
 
 ```powershell
 node device-hub.mjs grants
-node device-hub.mjs revoke --grant-id "<授权ID>"
+node device-hub.mjs revoke --grant-id '<GRANT_ID>'
 ```
 
-撤销和过期会阻止后续请求，并在真正派发动作前再次检查。`--caps all` 是所有者显式授予全部已知能力的选择，不是推荐的默认权限。
+只有 owner 能管理授权。撤销会阻止后续鉴权、事件交付和排队动作派发；不能撤回已经送出的指令、已经交付的帧或已经发生的设备效果。删除客户端文件不等于撤销服务器上的授权。
 
-安装应用清单需要单独的 `app.list` 能力，`state.read` 不隐含此权限。它只返回经过筛选的应用 ID、标题、系统应用标记及普通启动是否允许，不返回应用 URL、图标地址或原始权限列表。要调用它，给相应客户端签发 `app.list` 后提交同名动作和空参数对象。
+把普通 Agent 限定为 SDK/HTTPS 窄授权客户端。持有同一 OS 账户无限 shell 的程序能读取或修改 owner 环境，本项目没有提供 OS 沙箱。
 
-## 图像权限单独控制
+## 画面观察
 
-`screen.observe` 允许发起临时观测；`screen.read` 允许读取已保存帧。二者分别授权。截图还要求电视本地配置明确启用临时观测，客户端授权不能替代该开关。
+画面观察默认关闭，并使用尚未端到端加密的旧局域网回传。仅在经过审查的精确 B8 型号／固件和可信网络上，由所有者决定开启。
+
+需要同时满足：
+
+1. Hub 中该设备的 `observer` 功能已启用并重启生效。
+2. 原私有 LG 配置中该设备明确设置 `allowTemporaryObserver: true`。
+3. 客户端具有 `screen.observe`；读取图片还要独立的 `screen.read`。
+4. 真实设备身份、固件和受控通道通过适配器的固定检查。
+
+先在原配对文件的目标设备元数据中调整本地开关，**保留加密密钥、证书指纹和其他登记字段**，不要用一个示例 JSON 覆盖整个文件。然后：
 
 ```powershell
-node device-hub.mjs grant --label screen-client --caps screen.observe,screen.read --device living-room-tv --out .device-hub/screen-client.json --hours 1
+node device-hub.mjs stop
+node device-hub.mjs features --device living-room-tv --features observer
+node device-hub.mjs serve
+```
+
+功能选择是替换列表；以上选择仅保留 `observer`，同时需要媒体时写 `observer,media`。功能不会扩大已有客户端 grant。
+
+在另一终端授予并发起一次观察：
+
+```powershell
+node device-hub.mjs grant --label screen-client --device living-room-tv --caps screen.observe,screen.read --hours 1 --out .device-hub/screen-client.json
+New-Item -ItemType Directory -Path captures -Force | Out-Null
 node device-hub.mjs observe --device living-room-tv --out captures/current.jpg --credential .device-hub/screen-client.json
 ```
 
-保存目录须已存在，输出文件不能已存在。状态订阅不会携带图片字节；拿到帧 ID 也不能绕过 `screen.read`。当前帧五分钟后不可读取，并限制每设备帧数及总大小。过期清理不代表磁盘安全擦除。
+父目录要先存在，目标图片必须不存在。此操作会短暂进入受控覆盖层并尝试恢复原应用；返回清理与恢复结果，不能把部分成功当成完整观察。普通 SSAP 若返回 HTTP 截图地址，新版下载器会拒绝明文降级；它不是该 B8 临时观察机制的替代。
 
-B8 观测会短暂使用特定系统覆盖层，结束后关闭并恢复原应用。它是按次状态与截图请求，不是连续投屏或实时视频，也不提供 Disney+ DOM。内部播放器 `playing` 可能只是首页预览；不能据此宣称电影已播放。
+保留帧最多五分钟，每设备最多五帧、总计最多 32 MiB；过期后 API 立即拒绝读取，定期逻辑清理不等于 WAL、备份或磁盘安全擦除。导出到 `captures` 的图片不再受 Hub 帧过期策略管理，不能公开上传。
 
-## Node SDK
+观察不是连续视频、电视 root 或 Disney+ DOM。系统 `playing` 可能只是首页预览，不能确认具体电影或账号状态。
 
-从项目根目录运行的代码可以使用 `lib/hub/client.mjs`。凭据文件由所有者预先签发，程序不需要读取电视配置：
+## 媒体功能
+
+`media` 功能与普通播放/暂停遥控分开。它包含媒体 URL、DLNA 和文件投送；其中旧协议不提供完整的局域网认证与加密。
+
+- 停止 Hub，明确选择 `features --device living-room-tv --features media`，然后重启。
+- 本地文件还需要原私有 LG 元数据中的明确 `mediaRoots`。
+- 网址还需要明确 `allowedUrlOrigins`，默认拒绝。
+- 给客户端分别授予要用的固定动作。没有任意 HTTP、文件或厂商 RPC 透传。
+
+不要把凭据目录加入媒体根，不要给不可信 Agent 整个用户目录或宽泛 URL 源。电视后续进行的 DNS 和跳转行为不由中枢完整约束。
+
+## SDK 与结果判断
+
+仓库根目录的 ES module：
 
 ```js
 import { readJson } from './lib/hub/config.mjs';
 import { resolveCredential } from './lib/security/credentials.mjs';
 import { HubClient } from './lib/hub/client.mjs';
 
-const credential = await resolveCredential(await readJson('.device-hub/audio-client.json'));
-const hub = new HubClient(credential);
+const hub = new HubClient(await resolveCredential(await readJson('.device-hub/audio-client.json')));
 const operation = await hub.execute('living-room-tv', 'audio.volume.set', { volume: 15 }, {
-  idempotencyKey: 'volume-example-1',
+  idempotencyKey: 'example-volume-request-1',
   timeoutMs: 30000,
 });
 console.log(operation.state, operation.result?.confirmed);
 ```
 
-`submit()` 只提交作业；`operation(id)` 查询状态；`execute()` 提交并有限等待。等待结束仍可能返回 `queued` 或 `running`，客户端应继续查询原作业，而不是换一个幂等键重发。
+`submit()` 提交操作，`operation(id)` 查询原操作，`execute()` 有限等待。等待结束仍可能是 `queued` 或 `running`。接口返回、错误码、逐字段时效和 SSE 游标见 [API](API.md)。
 
-使用具有相应授权的 SDK 客户端，可以通过 `state(deviceId)` 读取状态、`events({afterId, signal})` 接收事件、`frame(frameId)` 读取图像。客户端断线后用最后的事件 ID 重新建立事件流；当前 SDK 不自动恢复连接。事件日志只保留最近一万条，存在缺口时重新获取当前状态。
-
-## 作业、期限与状态
-
-| 状态 | 含义 |
+| 状态 | 应如何理解 |
 | --- | --- |
-| `queued` / `running` | 已排队／正在处理，尚无最终结果。 |
-| `confirmed` | 在结果指定范围内观察到目标状态，不代表更广的业务目标已经完成。 |
-| `unconfirmed` | 请求已发送或收到应答，但效果缺少充分验证。 |
-| `failed` | 请求被拒绝或验证失败，详见脱敏错误。 |
-| `expired` | 在派发前超过请求期限。 |
-| `unknown` | 可能已产生效果，但因中断、错误或重启无法确定。 |
-| `cancelled` | 作业未继续派发，例如排队期间重启或授权失效。 |
+| `queued` / `running` | 尚未有最终结果，继续查询原 operation。 |
+| `confirmed` | 在结果所述范围内有确认依据，不等于更广业务目标已完成。 |
+| `unconfirmed` | 没有充分的效果验证。 |
+| `failed` / `expired` / `cancelled` | 查阅具体结果；不能自动将所有失败视为安全重试。 |
+| `unknown` | 可能已产生效果，不能自动重放。 |
 
-同一客户端重复使用同一幂等键和相同请求，会返回原作业；相同键配不同参数会冲突。幂等不意味着设备协议本身支持事务。服务不会自动重放不确定的写操作：重启后的排队作业取消，执行中作业标为未知。
+LG 默认约五秒轮询，状态字段各有来源、观察时间、过期时间和 `stale`。在线连接不意味着每个字段都新鲜，SSE 不等于电视内部状态实时推送。事件日志保留一万条，操作和幂等记录在数据库生命周期内保留；监控磁盘增长。
 
-每个状态字段带有自己的观察时间、过期时间和来源，读取时提供 `stale`。当前 LG 适配器默认约五秒轮询一次；SSE 是 Hub 已知事件的传输方式，不等于电视内部状态实时推送。过期字段、在线连接和历史截图必须分别理解。
+## 更新、迁移和历史证据
 
-## HTTP 接口
+更新前通过服务原终端或原启动器停止旧进程，再更新到经过审查的版本。当前 CLI 不会为了停止旧版服务而自动解密失败后降级读取明文令牌。迁移开始前会检查端口未被占用。
 
-SDK 使用带 Bearer 授权的本地接口，令牌不放在 URL 中：
-
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| GET | `/v1/devices` | 授权范围内的设备。 |
-| GET | `/v1/devices/{id}/state` | 带字段新鲜度的状态。 |
-| GET | `/v1/devices/{id}/capabilities` | 当前客户端获准使用的固定能力。 |
-| POST | `/v1/devices/{id}/actions` | 提交带幂等键和期限的动作。 |
-| GET | `/v1/operations/{id}` | 查询自己的作业。 |
-| GET | `/v1/events?after={eventId}` | 可恢复游标的 SSE 事件流。 |
-| GET | `/v1/frames/{id}` | 单独授权的图像读取。 |
-
-服务不是公网或不可信多用户网络接口。社区机型 JSON 只能描述兼容性和证据，不能添加代码、权限或任意调用。Home Assistant、Matter 和其他厂商适配器尚未实现；新增适配器必须独立代码审查。
+按[安全迁移说明](SECURE_SETUP.md#existing-installations)迁移已存在的 home 和显式命名的配对文件，再重启。电视关闭时仍可完成加密，但证书登记为 pending，无法通过未验证连接控制电视。下次由所有者开机后重跑迁移并重启，现有指纹不会被静默替换。
 
 <a id="live-verification"></a>
 
-## 已完成的有限真机验证
+2026-10-19 的 [LG 旧链路实测](evidence/local-hub-2026-10-19.md)记录了静音恢复、幂等、临时画面、授权拒绝和事件交付。它是 HTTPS/证书加固前的历史记录，不是新链路的实机认证。当前 [ECOVACS 只读证据](evidence/ecovacs-x11-2026-10-19.md)同样只覆盖所列能力。支持范围以[设备矩阵](SUPPORTED_DEVICES.md)为准。
 
-2026-10-19，LG OLED65B8PUA、固件 05.50.70：
-
-- 经过 Hub HTTP 请求切换静音并恢复，均读回确认。
-- 重复使用相同幂等键和请求，返回同一作业 ID。
-- 取得并查看 1920×1080 JPEG，图像大小为 162,218 字节；临时资源清理及原应用恢复均确认成功。
-- 读取到 Disney+ 的 MSE 播放管线，画面尺寸为 1920×1080，状态为 `playing`；这可能来自预览，不确认具体电影。
-- 只读客户端的越权请求被拒绝，撤销授权后的请求被拒绝。
-- SSE 收到 19 条事件，验证了事件交付；这不代表帧率或电视内部连续事件订阅。
-
-该记录不包含账号内容、原始截图或私有网络信息，也不覆盖全部 Hub 动作、所有异常路径或其他型号。
-
-更多边界见 [架构](ARCHITECTURE.md) 和 [安全说明](../SECURITY.md)。
+更多故障处理见 [Troubleshooting](TROUBLESHOOTING.md)，威胁与限制见[安全政策](../SECURITY.md)。
