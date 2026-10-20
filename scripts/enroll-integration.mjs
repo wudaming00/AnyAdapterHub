@@ -63,12 +63,12 @@ export function readMaskedSecret(label, limit, input = process.stdin, output = p
 }
 
 async function certificate(file) {
-  const before = await lstat(file);
-  if (before.isSymbolicLink() || !before.isFile() || before.size > 16384) fail();
-  const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  // Open first: every type/size check is bound to the handle actually read.
+  // NONBLOCK prevents a substituted FIFO from stalling before fstat on POSIX.
+  const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const info = await handle.stat(), current = await lstat(file);
-    if (!info.isFile() || info.size > 16384 || current.isSymbolicLink() || before.dev !== info.dev || before.ino !== info.ino || current.dev !== info.dev || current.ino !== info.ino) fail();
+    if (!info.isFile() || info.nlink !== 1 || info.size > 16384 || !current.isFile() || current.isSymbolicLink() || current.dev !== info.dev || current.ino !== info.ino) fail();
     const bytes = Buffer.alloc(16385); let length = 0;
     while (length < bytes.length) { const { bytesRead } = await handle.read(bytes, length, bytes.length - length, length); if (!bytesRead) break; length += bytesRead; }
     if (length > 16384) fail();

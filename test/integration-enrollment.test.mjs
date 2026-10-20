@@ -6,6 +6,8 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { PassThrough } from 'node:stream';
+import { promises as fixtureFS } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { initializeHub, readJson } from '../lib/hub/config.mjs';
 import { loadHomeAssistantConfig } from '../lib/adapters/home-assistant-config.mjs';
 import { loadMQTTConfig } from '../lib/adapters/mqtt-config.mjs';
@@ -75,4 +77,25 @@ test('masked terminal input never echoes credentials and restores raw mode/liste
     await assert.rejects(pending,e=>e.code==='ENROLLMENT_CANCELLED'&&!e.message.includes('private'));
     assert.equal(input.isRaw,false);assert.equal(input.listenerCount('keypress'),0);assert.equal(input.listenerCount('error'),0);
   }
+});
+
+test('certificate replacement after open is rejected before bytes or credentials are read',async t=>{
+  const f=await fixture(t), file=path.join(f.dir,'cert.pem'), replacement=path.join(f.dir,'replacement.pem');
+  await writeFile(replacement,'not the enrolled certificate');let reads=0,prompts=0;
+  const original=fixtureFS.open;
+  const mock=t.mock.method(fixtureFS,'open',async(...args)=>{
+    const handle=await original(...args);if(args[0]!==file)return handle;
+    const stat=handle.stat.bind(handle),read=handle.read.bind(handle);
+    handle.stat=async()=>{const info=await stat();await fixtureFS.rename(file,path.join(f.dir,'original.pem'));await fixtureFS.rename(replacement,file);return info;};
+    handle.read=(...values)=>{reads++;return read(...values);};return handle;
+  });
+  syncBuiltinESMExports();t.after(()=>{mock.mock.restore();syncBuiltinESMExports();});
+  await assert.rejects(enrollIntegration(f.selected,{secretStore:f.store,prompt:async()=>{prompts++;return 'unused';}}),{code:'INVALID_ENROLLMENT'});
+  assert.equal(reads,0);assert.equal(prompts,0);
+});
+
+test('a hard-linked certificate is rejected before asking for credentials',async t=>{
+  const f=await fixture(t);await fixtureFS.link(path.join(f.dir,'cert.pem'),path.join(f.dir,'alias.pem'));let prompts=0;
+  await assert.rejects(enrollIntegration(f.selected,{secretStore:f.store,prompt:async()=>{prompts++;return 'unused';}}),{code:'INVALID_ENROLLMENT'});
+  assert.equal(prompts,0);
 });
