@@ -13,10 +13,11 @@ AnyAdapter Hub aims to give agents a consistent way to control devices and obser
 
 The reviewed LG profile is [lg-oled65b8pua-webos4.json](../profiles/lg-oled65b8pua-webos4.json). Its `verified`, `unverified` and `unsupported` labels describe test evidence; they do not grant a client permission to operate the device.
 
-**Transport scope:** the LG hardware records below predate the mandatory pinned
-TLS change. The new SSAP/pointer/capture connection rules have local loopback TLS
-tests, but this B8 still needs certificate enrollment and hardware retesting after
-the change. Its off/standby state does not justify a plaintext fallback. Live Hub
+**Transport scope:** the earlier records predate mandatory pinned TLS. The
+[pinned-control and movie-workflow retest](evidence/lg-b8-workflow-2026-10-19.md)
+covers completed first enrollment, pinned SSAP/pointer control, selected app
+navigation and temporary observation on this B8. Ordinary capture downloads
+still have offline TLS evidence only. Standby does not justify plaintext fallback. Live Hub
 credential storage currently requires Windows CurrentUser DPAPI; Linux/macOS test
 results do not establish live platform support. See [secure setup](SECURE_SETUP.md).
 
@@ -31,6 +32,7 @@ Evidence is recorded in the [device tests](evidence/lg-b8-2026-10-19.md) and [lo
 | Browser | A controlled page loaded and reported that load to the test receiver. | Does not establish unrestricted browser automation or successful text injection. |
 | DLNA and local media | A controlled H.264 720p video reached `PLAYING`; pause, resume and stop were read back. A selected local file was cast. | Does not establish 4K/HDR, every codec, protected streaming services or arbitrary file access. Local files require configured `mediaRoots`. |
 | Temporary observation | Real 1920×1080 JPEG frames, system foreground state and ACB player state were returned; action/observation tests showed UI changes. | Special opt-in path described below; not ordinary SSAP capture or continuous video. |
+| Disney+ movie workflow | Exact movie details, playback title and advancing progress were visually assessed through the checkpointed workflow, alongside full-screen `playing`. | Attached visual agent required; no vendor-authenticated title or generic deep-link guarantee. See the [retest](evidence/lg-b8-workflow-2026-10-19.md). |
 
 Text entry, pointer move/click/scroll, generic app media controls, audio-output changes, picture toggling, native URL playback and content deep links remain partially or wholly unverified. In particular, the tested Moana deep link did not establish direct title playback. See the individual evidence entries before relying on any of these features.
 

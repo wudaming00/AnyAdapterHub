@@ -6,8 +6,8 @@
 支持范围按“精确型号、固件和具体能力”记录，不能由同品牌推断兼容。
 
 目前有 LG OLED65B8PUA／05.50.70 的有限实测，以及 US ECOVACS X11 的
-只读 Hub 实测。新适配器中的扫地机移动控制尚未真机验证；LG 新增证书固定
-链路也仍待该电视开机后验证。以[支持表](docs/SUPPORTED_DEVICES.md)和
+只读 Hub 实测。新适配器中的扫地机移动控制尚未真机验证；LG 已完成首次证书登记、
+部分固定证书控制与视觉播放工作流的[复测](docs/evidence/lg-b8-workflow-2026-10-19.md)。以[支持表](docs/SUPPORTED_DEVICES.md)和
 [安全部署说明](docs/SECURE_SETUP.md)为准。
 
 - 提交型号、固件或能力报告：使用

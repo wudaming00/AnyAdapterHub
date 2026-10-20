@@ -26,19 +26,23 @@ const HELP = `AnyAdapter Hub local device hub
   node device-hub.mjs status|capabilities [--device living-room-tv] [--credential FILE]
   node device-hub.mjs call --action ACTION --args JSON [--key IDEMPOTENCY_KEY] [--device ID]
   node device-hub.mjs observe [--device ID] [--out captures/current.jpg]
+  node device-hub.mjs movie-start --title TITLE --year YEAR --key REQUEST_ID --device ID --credential FILE
+  node device-hub.mjs movie-observe|movie-resume|movie-status --key REQUEST_ID --device ID --credential FILE
+  node device-hub.mjs movie-step --key REQUEST_ID --device ID --credential FILE --decision JSON
   node device-hub.mjs events [--after 0]
   node device-hub.mjs grant --label NAME --caps state.read,events.read --out FILE [--hours 24]
   node device-hub.mjs grants|revoke --grant-id ID
 
 All client commands default to .device-hub/client.json. Grant management uses owner.json.
 Grant --caps all is an explicit owner choice; tokens use OS-encrypted files, never printed.
+Movie workflows require a scoped grant, persist encrypted progress and never replay ambiguous writes.
 init/add import references to owner-enrolled local configuration; they never silently pair devices.
 add requires a restart before the running hub can use its new device registry.
 serve uses pinned HTTPS on 127.0.0.1 only. It does not install OS startup tasks.
 `;
 function parse(argv) {
   const [command = 'help', ...rest] = argv; const options = {};
-  const allowed = ['home', 'tv-config', 'legacy-tv-config', 'ecovacs-config', 'host', 'id', 'label', 'port', 'credential', 'device', 'action', 'args', 'key', 'out', 'after', 'caps', 'hours', 'grant-id', 'adapter', 'features'];
+  const allowed = ['home', 'tv-config', 'legacy-tv-config', 'ecovacs-config', 'host', 'id', 'label', 'port', 'credential', 'device', 'action', 'args', 'key', 'out', 'after', 'caps', 'hours', 'grant-id', 'adapter', 'features', 'title', 'year', 'decision'];
   for (let i = 0; i < rest.length; i += 2) {
     if (!rest[i].startsWith('--') || !allowed.includes(rest[i].slice(2)) || rest[i + 1] === undefined || Object.hasOwn(options, rest[i].slice(2))) throw new Error('Invalid arguments.');
     options[rest[i].slice(2)] = rest[i + 1];
@@ -50,6 +54,23 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === 'help' || command === '--help') { process.stdout.write(HELP); return; }
   const home = path.resolve(options.home ?? '.device-hub');
   if (command === 'adapters') { process.stdout.write(JSON.stringify(adapterMetadata(), null, 2) + '\n'); return; }
+  if (['movie-start', 'movie-observe', 'movie-resume', 'movie-status', 'movie-step'].includes(command)) {
+    if (!options.device || !options.key || !options.credential) throw new Error('Movie commands require an exact device, stable request key and scoped credential file.');
+    if (command === 'movie-start' && (!options.title || !/^\d{4}$/.test(options.year ?? ''))) throw new Error('Movie title and four-digit year required.');
+    if (command === 'movie-step' && !options.decision) throw new Error('A bounded visual decision is required.');
+    const { withMovieWorkflow } = await import('./lib/hub/movie-journal.mjs');
+    const result = await withMovieWorkflow({ home, credentialPath: options.credential, deviceId: options.device, requestId: options.key,
+      ...(command === 'movie-start' ? { create: { title: options.title, year: Number(options.year) } } : {}) }, async workflow => {
+      switch (command) {
+        case 'movie-start': return workflow.prepare();
+        case 'movie-observe': return workflow.observe();
+        case 'movie-resume': return workflow.resume();
+        case 'movie-step': return workflow.step(JSON.parse(options.decision));
+        default: return workflow.status();
+      }
+    });
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n'); return;
+  }
   if (['enable', 'disable'].includes(command)) { process.stdout.write(JSON.stringify(await setAdapterEnabled(home, options.adapter, command === 'enable')) + '\n'); return; }
   if (command === 'features') { if (options.features === undefined || !options.device) throw new Error('Device and features required.'); process.stdout.write(JSON.stringify(await setDeviceFeatures(home, options.device, options.features ? options.features.split(',') : [])) + '\n'); return; }
   if (command === 'migrate-security') {

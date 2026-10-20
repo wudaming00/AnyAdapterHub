@@ -76,6 +76,36 @@ test('offline TV enrollment stays encrypted and pending, then upgrades only thro
   assert.equal(active.certificatePin, 'a'.repeat(64)); assert.equal(await resolveTVKey(active, host, { secretStore: f.secretStore }), clientKey);
 });
 
+test('migration probes the selected TV through its saved explicit interface with matching precedence', async t => {
+  for (const profile of [
+    { wake: { bindAddress: '192.168.77.10' } },
+    { interfaceAddress: '192.168.77.11', wake: { bindAddress: '192.168.77.10' } },
+  ]) {
+    const f = await fixture(t);
+    await writeFile(f.tvFile, JSON.stringify({ schemaVersion: 1, devices: { [host]: { clientKey, ...profile } } }));
+    const probes = [];
+    await migrateSecurity({ ...f.options, probeTV: async args => { probes.push(args); return { certificatePin: 'a'.repeat(64) }; } });
+    assert.deepEqual(probes, [{ host, port: 3001, timeoutMs: 5000, localAddress: profile.interfaceAddress ?? profile.wake.bindAddress }]);
+    assert.equal(await resolveTVKey((await readJson(f.tvFile)).devices[host], host, { secretStore: f.secretStore }), clientKey);
+  }
+});
+
+test('migration does not retry without the explicit interface when it is unavailable', async t => {
+  const f = await fixture(t);
+  await writeFile(f.tvFile, JSON.stringify({ schemaVersion: 1, devices: { [host]: { clientKey, wake: { bindAddress: '192.168.77.10' } } } }));
+  const beforeTV = await readFile(f.tvFile, 'utf8');
+  const beforeOwner = await readFile(path.join(f.home, 'owner.json'), 'utf8');
+  let probes = 0;
+  await assert.rejects(migrateSecurity({ ...f.options, probeTV: async args => {
+    probes++; assert.equal(args.localAddress, '192.168.77.10');
+    throw Object.assign(new Error('fixture interface unavailable'), { code: 'SOURCE_ADDRESS_UNAVAILABLE' });
+  } }), { code: 'SOURCE_ADDRESS_UNAVAILABLE' });
+  assert.equal(probes, 1);
+  assert.equal(await readFile(f.tvFile, 'utf8'), beforeTV);
+  assert.equal(await readFile(path.join(f.home, 'owner.json'), 'utf8'), beforeOwner);
+  await assertNoStaging(f);
+});
+
 test('explicit migration upgrades old encrypted host-only envelopes while runtime rejects them', async t => {
   const f = await fixture(t), old = { certificatePin: 'a'.repeat(64), clientKeySecret: await f.secretStore.sealSecret(clientKey, { purpose: `lg/client-key:${host}` }) };
   await writeFile(f.tvFile, JSON.stringify({ schemaVersion: 1, devices: { [host]: old } }));

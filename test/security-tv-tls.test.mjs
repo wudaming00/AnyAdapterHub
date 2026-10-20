@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import https from 'node:https';
 import net from 'node:net';
+import tls from 'node:tls';
+import os from 'node:os';
 import { createHash, generateKeyPairSync, randomBytes, sign, X509Certificate } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -121,6 +123,61 @@ test('real pointer channel authenticates the same pin before a button is sent', 
   assert.deepEqual(f.frames, ['type:button\nname:HOME\n\n']);
 });
 
+test('explicit source selection binds both pinned SSAP and pointer sockets with interfaceAddress precedence', async t => {
+  const f = await fixture(t);
+  const opened = []; const connect = tls.connect;
+  t.mock.method(tls, 'connect', function (options, ...rest) { opened.push(options); return connect.call(this, options, ...rest); });
+  const controller = new TVController({ host: '127.0.0.1', port: f.port, certificatePin: f.pin,
+    clientKey: 'synthetic-pairing-key', interfaceAddress: '127.0.0.1', wake: { bindAddress: '127.0.0.2' } });
+  t.after(() => controller.close());
+  await controller.connect(); await controller.key('HOME'); await delay(10);
+  assert.equal(opened.length, 2);
+  assert.deepEqual(opened.map(options => options.localAddress), ['127.0.0.1', '127.0.0.1']);
+  assert.deepEqual(opened.map(options => options.host), ['127.0.0.1', '127.0.0.1']);
+  assert.deepEqual(f.frames, ['type:button\nname:HOME\n\n']);
+});
+
+test('the saved wake interface also binds pinned SSAP without silently selecting another route', async t => {
+  const f = await fixture(t);
+  const opened = []; const connect = tls.connect;
+  t.mock.method(tls, 'connect', function (options, ...rest) { opened.push(options); return connect.call(this, options, ...rest); });
+  const client = new SSAPClient({ host: '127.0.0.1', port: f.port, certificatePin: f.pin,
+    clientKey: 'synthetic-pairing-key', wake: { bindAddress: '127.0.0.1' } });
+  t.after(() => client.close());
+  await client.connect();
+  assert.equal(opened.length, 1); assert.equal(opened[0].localAddress, '127.0.0.1');
+});
+
+test('a missing saved source interface fails before any TLS attempt, upgrade or pairing bytes', async t => {
+  const f = await fixture(t); let opened = 0;
+  t.mock.method(os, 'networkInterfaces', () => ({}));
+  t.mock.method(tls, 'connect', () => { opened++; throw new Error('must not connect'); });
+  const client = new SSAPClient({ host: '127.0.0.1', port: f.port, certificatePin: f.pin,
+    clientKey: 'synthetic-pairing-key', interfaceAddress: '127.0.0.1' });
+  t.after(() => client.close());
+  await assert.rejects(client.connect(), { code: 'SOURCE_ADDRESS_UNAVAILABLE' });
+  assert.equal(opened, 0); assert.equal(client.registered, false);
+  assert.deepEqual(f.requests, []); assert.deepEqual(f.upgrades, []); assert.deepEqual(f.messages, []);
+});
+
+test('source availability is rechecked for a later pointer connection and never falls back', async t => {
+  const f = await fixture(t);
+  const controller = new TVController({ host: '127.0.0.1', port: f.port, certificatePin: f.pin,
+    clientKey: 'synthetic-pairing-key', interfaceAddress: '127.0.0.1' });
+  t.after(() => controller.close());
+  await controller.connect();
+  t.mock.method(os, 'networkInterfaces', () => ({}));
+  await assert.rejects(controller.key('HOME'), { code: 'SOURCE_ADDRESS_UNAVAILABLE' });
+  assert.deepEqual(f.frames, []); assert.deepEqual(f.upgrades, ['/']);
+});
+
+test('source address rejects nonlocal, nonliteral and mismatched address families', () => {
+  for (const localAddress of ['example.test', '8.8.8.8', '::1', '0.0.0.0']) {
+    assert.throws(() => createPinnedTVAgent({ host: '127.0.0.1', certificatePin: 'a'.repeat(64), localAddress }),
+      { code: 'INVALID_SOURCE_ADDRESS' });
+  }
+});
+
 test('real pointer channel refuses plaintext downgrade from a pinned SSAP session', async t => {
   const f = await fixture(t, { pointerURL: 'ws://127.0.0.1:9/pointer' });
   const controller = new TVController({ host: '127.0.0.1', port: f.port, certificatePin: f.pin, clientKey: 'synthetic-pairing-key' });
@@ -148,6 +205,20 @@ test('private image download requires HTTPS and a matching pin before sending it
   assert.deepEqual(f.requests, []);
   const image = await downloadCapture(`https://127.0.0.1:${f.port}/capture`, '127.0.0.1', { certificatePin: f.pin });
   assert.deepEqual(image.data, Buffer.from([255, 216, 255, 217])); assert.deepEqual(f.requests, ['/capture']);
+});
+
+test('certificate probes and pinned image downloads retain explicit source binding and fail closed when unavailable', async t => {
+  const f = await fixture(t);
+  const opened = []; const connect = tls.connect;
+  t.mock.method(tls, 'connect', function (options, ...rest) { opened.push(options); return connect.call(this, options, ...rest); });
+  const observed = await probeTVIdentityCertificate({ host: '127.0.0.1', port: f.port, localAddress: '127.0.0.1' });
+  assert.equal(observed.certificatePin, f.pin);
+  await downloadCapture(`https://127.0.0.1:${f.port}/capture`, '127.0.0.1', { certificatePin: f.pin, localAddress: '127.0.0.1' });
+  assert.deepEqual(opened.map(options => options.localAddress), ['127.0.0.1', '127.0.0.1']);
+  t.mock.method(os, 'networkInterfaces', () => ({}));
+  await assert.rejects(probeTVIdentityCertificate({ host: '127.0.0.1', port: f.port, localAddress: '127.0.0.1' }), { code: 'SOURCE_ADDRESS_UNAVAILABLE' });
+  await assert.rejects(downloadCapture(`https://127.0.0.1:${f.port}/blocked`, '127.0.0.1', { certificatePin: f.pin, localAddress: '127.0.0.1' }), { code: 'SOURCE_ADDRESS_UNAVAILABLE' });
+  assert.equal(opened.length, 2); assert.deepEqual(f.requests, ['/capture']); assert.deepEqual(f.messages, []);
 });
 
 test('a pinned agent cannot be reused to route requests to a different host', async () => {

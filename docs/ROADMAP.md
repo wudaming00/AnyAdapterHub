@@ -31,7 +31,7 @@ review and administrator approval before its deployment claim can change.
 
 ## Next: validate the hardened LG path
 
-The mandatory pinned transport has loopback TLS tests. The documented B8 still needs owner-supervised certificate enrollment and read-only hardware retesting after that change; an off television must not trigger plaintext fallback or automatic wake.
+The mandatory pinned transport has loopback TLS tests and selected B8 hardware retesting, including first enrollment and visual movie playback. See the [scoped retest](evidence/lg-b8-workflow-2026-10-19.md); other devices/actions remain unverified. Standby must not trigger plaintext fallback or unauthorized wake.
 
 Acceptance criteria:
 

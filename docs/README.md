@@ -12,6 +12,7 @@ AnyAdapter Hub is a source-distributed development preview. Read the setup and s
 | Windows encryption, certificate trust and existing-install migration | [Secure setup](SECURE_SETUP.md) |
 | Start/stop, adapters, feature selection, grants, frames and recovery | [运行与维护 / Local Hub](LOCAL_HUB.md) |
 | API routes, schemas, SDK, events and error semantics | [API and SDK](API.md) |
+| One-request Disney+ playback with an attached visual agent | [Movie workflow](MOVIE_WORKFLOW.md) |
 | Missing dependencies, denied access, standby and certificate failures | [Troubleshooting](TROUBLESHOOTING.md) |
 | Exact hardware/firmware and verification limits | [Supported devices](SUPPORTED_DEVICES.md) |
 | Optional ECOVACS cloud worker and existing enrollment prerequisite | [ECOVACS X11](ECOVACS_X11.md) |
@@ -45,6 +46,7 @@ Security problems belong in [private vulnerability reports](https://github.com/w
 
 - [LG OLED65B8PUA, firmware 05.50.70](evidence/lg-b8-2026-10-19.md).
 - [Historical LG Hub control and observation checks](evidence/local-hub-2026-10-19.md).
+- [Pinned LG control and visual movie-workflow retest](evidence/lg-b8-workflow-2026-10-19.md).
 - [ECOVACS X11 read-only Hub checks](evidence/ecovacs-x11-2026-10-19.md).
 
-The LG hardware records predate the pinned transport change. Local TLS tests validate connection rules, not that this television has completed certificate enrollment or that every control works on another model. A `playing` state is not title verification, and a device ACK is not completion.
+Earlier LG records predate pinned transport; the linked retest establishes first enrollment and selected pinned controls on the exact B8. It does not validate every action or another model. A `playing` state is not title verification, and a device ACK is not completion.

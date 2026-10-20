@@ -18,6 +18,7 @@ remain planned.
 - Records operation IDs and idempotency keys. Uncertain writes are not automatically replayed after reconnect or restart.
 - Keeps device adapters and their dependencies optional. Community model profiles are validated data; they cannot install code or authorize a device.
 - Separates ordinary state, screen capture and permission to read retained frames.
+- Provides a [checkpointed Disney+ movie workflow](docs/MOVIE_WORKFLOW.md) for an attached visual agent, with encrypted progress and frame-bound decisions.
 
 The core can start with no devices. Installing an adapter does not enroll a household device or grant an agent control.
 
@@ -25,7 +26,7 @@ The core can start with no devices. Installing an adapter does not enroll a hous
 
 | Adapter | Evidence and limits |
 | --- | --- |
-| LG OLED65B8PUA, firmware `05.50.70`, webOS release `4.4.3` | Historical hardware evidence covers selected controls, state, media and temporary observation. The new pinned LG transport has local TLS tests; certificate enrollment and hardware retesting on this TV remain pending. Other models/firmware are unverified. |
+| LG OLED65B8PUA, firmware `05.50.70`, webOS release `4.4.3` | Selected pinned control and visual-agent movie playback were [retested on hardware](docs/evidence/lg-b8-workflow-2026-10-19.md), including first certificate enrollment. Earlier records cover selected media controls. Other models/firmware remain unverified. |
 | Optional B8 observer | Historical 1920×1080 JPEG and system-player feedback. Exact model/firmware, local opt-in and separate grants are required. Legacy LAN callbacks remain unencrypted; the feature defaults off. It does not expose Disney+ DOM or prove a movie title is playing. |
 | Optional ECOVACS DEEBOT X11 OmniCyclone | US ECOVACS HOME, Windows, existing encrypted enrollment. Hub state/details reads were hardware verified; movement actions have offline tests only. Firmware is unknown. |
 

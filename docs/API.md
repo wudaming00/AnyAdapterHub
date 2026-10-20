@@ -41,6 +41,7 @@ operation, frame or grant ID, not a vendor account ID or an IP address.
 | `GET /v1/devices/{id}/capabilities` | `state.read` on that device | `200`, `{ "deviceId", "actions", "read" }` |
 | `POST /v1/devices/{id}/actions` | The exact action capability | `202` for a new operation; `200` for an existing idempotent submission |
 | `GET /v1/operations/{id}` | Submitting client or owner, plus the operation's device/action authority | `200`, public operation record |
+| `GET /v1/devices/{id}/operations/by-key?key={key}` | Exact submitting client namespace and current original device/action authority | `200`, existing public operation; never submits or replays |
 | `GET /v1/frames/{id}` | `screen.read` on the frame's device | `200`, raw `image/jpeg` bytes |
 | `GET /v1/events` | `events.read` for at least one device | `200`, authenticated SSE stream |
 | `POST /v1/grants` | Owner | `201`, `{ "grant": {...}, "token": ... }` |
@@ -275,6 +276,7 @@ placed at the repository root. Main methods are:
 | `devices()`, `state(deviceId)`, `capabilities(deviceId)` | Corresponding JSON response |
 | `submit(deviceId, action, args, { idempotencyKey, timeoutMs })` | Submission response; SDK supplies a random UUID key when omitted |
 | `operation(id)` | Public operation record |
+| `operationByKey(deviceId, key)` | Read-only recovery of the current client's existing exact-device operation; `NOT_FOUND` never creates work |
 | `execute(deviceId, action, args, options)` | Submits once, polls every 150 ms; returns the latest record after `waitMs` (default 40000) or a terminal state |
 | `frame(id)` | Image `Buffer` |
 | `issueGrant(body)`, `grants()`, `revokeGrant(id)` | Owner provisioning endpoints |
@@ -286,6 +288,15 @@ wait can return a still-queued/running operation. Keep its ID and poll instead o
 issuing another action. Ordinary SDK HTTP requests have a ten-second deadline.
 SSE has a ten-second response-header deadline and stays open until closed,
 aborted or disconnected. Pass an `AbortSignal` to control stream lifetime.
+
+Use `operationByKey` when a submission response was lost. It accepts exactly one
+bounded `key` query parameter using the same key format as submission. It never
+returns another client's operation, including to an owner querying this route,
+and it rechecks current authority for the original action. A missing operation
+does not prove a late request can never arrive; obtain fresh evidence and stop
+for reconciliation rather than creating a replacement write automatically.
+For complete visual-agent playback orchestration, see the
+[movie workflow](MOVIE_WORKFLOW.md).
 
 ## Errors and limits
 

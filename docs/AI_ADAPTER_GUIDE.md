@@ -170,6 +170,13 @@ reporting `playing` does not identify the title. A vacuum accepting a command
 or reporting an active task does not prove cleaning finished. Preserve those
 limits in both UI messages and machine-readable results.
 
+For Disney+ on an enrolled compatible LG, use the fixed
+[movie workflow](MOVIE_WORKFLOW.md) instead of reconstructing an unjournaled
+remote-key script. An attached visual agent supplies frame-bound decisions;
+the workflow checkpoints before effects, reconciles original operation IDs and
+requires exact details plus advancing playback evidence. The workflow cannot
+grant itself authority, install a model or authenticate its own visual claims.
+
 `screen.observe` is separately gated by local compatible behavior, the enabled
 `observer` feature, explicit `allowTemporaryObserver:true` and an exact client
 grant. Reading a saved frame needs `screen.read`. Images are separate bytes,

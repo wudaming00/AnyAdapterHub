@@ -27,14 +27,14 @@ function fixture(options = {}) {
       async close() { calls.push(['close', generation]); this.registered = false; },
       async status() { calls.push(['status', generation]); return await options.status?.(generation, values) ?? status({ ...values, inputs: options.inputs }); },
       async identity() { calls.push(['identity']); return { vendor: 'LG', model: 'OLED65B8PUA', firmware: '05.50.70', host: config.host }; },
-      async apps() { calls.push(['apps']); return { returnValue: true, apps: options.apps ?? [] }; },
+      async apps() { calls.push(['apps']); if (options.readApps) return options.readApps(generation); return { returnValue: true, apps: options.apps ?? [] }; },
       async setVolume(value) { calls.push(['setVolume', value]); if (!options.mismatchVolume) values.volume = value; return { returnValue: true }; },
       async mute(value) { calls.push(['mute', value]); values.muted = value; return { returnValue: true }; },
       async launch(id) { calls.push(['launch', id]); values.appId = id; return { returnValue: true }; },
       async launchContent(id) { calls.push(['launchContent', id]); values.appId = id; return { returnValue: true }; },
       async waitForApp(id) { calls.push(['waitForApp', id]); return { confirmed: values.appId === id, foreground: { appId: values.appId } }; },
-      async setInput(id) { calls.push(['setInput', id]); values.appId = 'com.webos.app.hdmi3'; return { returnValue: true }; },
-      async key(key) { calls.push(['key', key]); if (options.keyFailure && generation === 0) { this.registered = false; throw Object.assign(new Error('sensitive ' + config.clientKey), { code: 'TRANSPORT_ERROR' }); } return { sent: true, acknowledged: false }; },
+      async setInput(id) { calls.push(['setInput', id, generation]); if (!this.registered) throw Object.assign(new Error(), { code: 'NOT_REGISTERED' }); values.appId = 'com.webos.app.hdmi3'; return { returnValue: true }; },
+      async key(key) { calls.push(['key', key]); if (options.keyTimeout && generation === 0) throw Object.assign(new Error('ambiguous timeout'), { code: 'TIMEOUT' }); if (options.keyFailure && generation === 0) { this.registered = false; throw Object.assign(new Error('sensitive ' + config.clientKey), { code: 'TRANSPORT_ERROR' }); } return { sent: true, acknowledged: false }; },
       async media(action) { calls.push(['media', action]); return { returnValue: true }; },
       async dlnaStatus() { calls.push(['dlnaStatus']); return { transportState: 'STOPPED', transportStatus: 'OK', currentSpeed: '1' }; },
       async dlnaPlay(url) { calls.push(['dlnaPlay', url]); if (options.castFailure) throw Object.assign(new Error('secret media URL'), { code: 'DLNA_STATE_TIMEOUT', uncertain: true }); return { requestAccepted: true, confirmed: true, transportConfirmed: true, transportState: 'PLAYING', transportStatus: 'OK', playbackVerified: true, contentVerified: false, url }; },
@@ -160,6 +160,110 @@ test('transport failure creates a new controller for read reconciliation without
   assert.equal(result.error.code, 'TRANSPORT_ERROR');
   assert.equal(JSON.stringify(result).includes(privateConfig.clientKey), false);
   assert.equal((await f.adapter.snapshot({ refresh: false })).connection.phase, 'online');
+});
+
+const failedStatus = code => Object.fromEntries(['foreground', 'audio', 'volume', 'power', 'inputs', 'sound']
+  .map(name => [name, { status: 'error', error: { code } }]));
+
+test('a completely timed-out status batch discards a half-open controller and retries reads once', async t => {
+  const f = fixture({ status: generation => generation === 0 ? failedStatus('TIMEOUT') : status() });
+  t.after(() => f.adapter.close());
+  const observed = await f.adapter.snapshot();
+  assert.equal(observed.connection.phase, 'online');
+  assert.equal(observed.fields.foreground.value.appId, 'com.disney.disneyplus-prod');
+  assert.equal(f.controllers.length, 2);
+  assert.deepEqual(f.calls.filter(call => call[0] === 'status').map(call => call[1]), [0, 1]);
+  assert.equal(f.controllers[0].registered, false);
+  assert.equal(f.calls.some(call => ['key', 'launch', 'launchContent', 'setVolume', 'mute', 'wake'].includes(call[0])), false);
+});
+
+test('input selection uses the replacement controller after its pre-read reconnects', async t => {
+  const f = fixture({ status: generation => generation === 0 ? failedStatus('TIMEOUT') : status() });
+  t.after(() => f.adapter.close());
+  const result = await f.adapter.execute({ action: 'input.select', args: { id: 'HDMI_3' } });
+  assert.equal(result.confirmed, true);
+  assert.deepEqual(f.calls.filter(call => call[0] === 'setInput'), [['setInput', 'HDMI_3', 1]]);
+  assert.equal(f.controllers[0].registered, false);
+});
+
+test('read recovery is bounded and keeps previous values expired when both connections time out', async t => {
+  let reachable = true;
+  const f = fixture({ status: () => reachable ? status() : failedStatus('TIMEOUT') });
+  t.after(() => f.adapter.close());
+  const before = await f.adapter.snapshot(); reachable = false;
+  await assert.rejects(f.adapter.snapshot(), { code: 'STATE_TIMEOUT' });
+  const after = await f.adapter.snapshot({ refresh: false });
+  assert.equal(f.controllers.length, 2);
+  assert.equal(f.calls.filter(call => call[0] === 'status').length, 3);
+  assert.equal(after.connection.phase, 'offline');
+  assert.equal(after.fields.volume.observedAt, before.fields.volume.observedAt);
+  assert.equal(Date.parse(after.fields.volume.expiresAt), 0);
+  assert.equal(f.controllers.every(controller => controller.registered === false), true);
+});
+
+test('partial status timeouts expire missing fields without reconnecting a responsive TV', async t => {
+  let partial = false;
+  const f = fixture({ status: () => {
+    const result = status();
+    if (partial) { result.foreground = failedStatus('TIMEOUT').foreground; result.inputs = failedStatus('TIMEOUT').inputs; }
+    return result;
+  } });
+  t.after(() => f.adapter.close());
+  await f.adapter.snapshot(); partial = true;
+  const after = await f.adapter.snapshot();
+  assert.equal(after.connection.phase, 'degraded');
+  assert.equal(f.controllers.length, 1);
+  assert.equal(Date.parse(after.fields.foreground.expiresAt), 0);
+  assert.equal(Date.parse(after.fields.inputs.expiresAt), 0);
+  assert.ok(Date.parse(after.fields.volume.expiresAt) > Date.now());
+});
+
+test('unsupported or rejected state APIs do not trigger reconnect loops', async t => {
+  const f = fixture({ status: () => failedStatus('TV_REJECTED') }); t.after(() => f.adapter.close());
+  await assert.rejects(f.adapter.snapshot(), { code: 'STATE_UNAVAILABLE' });
+  assert.equal(f.controllers.length, 1);
+  assert.equal(f.calls.filter(call => call[0] === 'status').length, 1);
+  assert.equal((await f.adapter.snapshot({ refresh: false })).connection.phase, 'degraded');
+});
+
+test('an ambiguous key timeout only reconnects for fresh reads and never sends the key again', async t => {
+  const f = fixture({ keyTimeout: true, status: generation => generation === 0 ? failedStatus('TIMEOUT') : status() });
+  t.after(() => f.adapter.close());
+  const result = await f.adapter.execute({ action: 'navigation.key', args: { key: 'ENTER' } });
+  assert.equal(result.error.code, 'TIMEOUT'); assert.equal(result.uncertain, true); assert.equal(result.confirmed, false);
+  assert.equal(f.calls.filter(call => call[0] === 'key').length, 1);
+  assert.equal(f.controllers.length, 2);
+  assert.equal((await f.adapter.snapshot({ refresh: false })).connection.phase, 'online');
+});
+
+test('app inventory retries only its read after a timeout and rechecks grants before retrying', async t => {
+  const f = fixture({ readApps: generation => {
+    if (generation === 0) throw Object.assign(new Error('read timed out'), { code: 'TIMEOUT' });
+    return { apps: [{ id: 'com.example.video', title: 'Example' }] };
+  } }); t.after(() => f.adapter.close());
+  const result = await f.adapter.execute({ action: 'app.list' });
+  assert.equal(result.confirmed, true); assert.equal(result.apps[0].id, 'com.example.video');
+  assert.equal(f.calls.filter(call => call[0] === 'apps').length, 2);
+  let valid = true;
+  const revoked = fixture({ readApps: () => { valid = false; throw Object.assign(new Error('read timed out'), { code: 'TIMEOUT' }); } });
+  t.after(() => revoked.adapter.close());
+  await assert.rejects(revoked.adapter.execute({ action: 'app.list' }, { assertDispatch() {
+    if (!valid) throw Object.assign(new Error('revoked'), { code: 'GRANT_REVOKED' });
+  } }), { code: 'GRANT_REVOKED' });
+  assert.equal(revoked.controllers.length, 1);
+  assert.equal(revoked.calls.filter(call => call[0] === 'apps').length, 1);
+});
+
+test('changed TLS trust or unavailable explicit source never falls back or retries a read', async t => {
+  for (const code of ['TLS_PIN_MISMATCH', 'SOURCE_ADDRESS_UNAVAILABLE', 'INVALID_SOURCE_ADDRESS']) {
+    const f = fixture({ connect: () => { throw Object.assign(new Error('blocked connection'), { code }); } });
+    t.after(() => f.adapter.close());
+    await assert.rejects(f.adapter.snapshot(), { code });
+    assert.equal(f.controllers.length, 1);
+    assert.equal(f.calls.filter(call => call[0] === 'connect').length, 1);
+    assert.equal(f.calls.some(call => call[0] === 'status'), false);
+    assert.equal((await f.adapter.snapshot({ refresh: false })).connection.phase, 'offline');
+  }
 });
 
 test('polling, actions and observations share a queue; close waits for observer restoration', async () => {

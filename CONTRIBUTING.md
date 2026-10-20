@@ -9,8 +9,8 @@ device/configuration and an observed capability, not an entire vendor.
 Current hardware evidence covers one LG OLED65B8PUA on firmware 05.50.70 and
 experimental **read-only** ECOVACS X11 integration on its documented US/Windows
 configuration. X11 movement actions have offline tests, not hardware validation
-through this adapter. The new pinned LG transport still awaits a live
-certificate/enrollment check on that television. See the current
+through this adapter. Selected pinned LG control and visual movie-workflow
+hardware checks are recorded in the [retest](docs/evidence/lg-b8-workflow-2026-10-19.md). See the current
 [support matrix](docs/SUPPORTED_DEVICES.md) and [secure setup](docs/SECURE_SETUP.md).
 
 ## Choose the contribution
