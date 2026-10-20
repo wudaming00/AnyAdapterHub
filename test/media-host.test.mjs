@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
 import { Writable } from 'node:stream';
-import { promises as fs } from 'node:fs';
+import { constants, promises as fs } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import { LocalMediaHost, byteRange, validateMediaRoots } from '../lib/media-host.mjs';
@@ -133,6 +135,117 @@ test('mediaRoots require explicit local directory paths and default to deny', as
   const host = new LocalMediaHost({ tvHost: '192.168.77.80', bindAddress: '192.168.77.11' });
   await assert.rejects(host.serve(path.resolve('clip.mp4')), /explicitly configured mediaRoots/);
   await host.close();
+});
+
+test('media host rejects rounded 64-bit identity collisions before starting a listener and closes the file', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-inode-'));
+  const file = path.join(directory, 'fixture.mp4'); await fs.writeFile(file, 'synthetic');
+  const selectedFile = await fs.realpath(file);
+  const before = 9007199254740992n, opened = before + 1n;
+  assert.equal(Number(before), Number(opened));
+  let listeners = 0, closes = 0;
+  const originalLstat = fs.lstat, originalOpen = fs.open;
+  t.mock.method(fs, 'lstat', async (target, options) => {
+    const info = await originalLstat(target, options); if (target === selectedFile) info.ino = options?.bigint ? before : Number(before); return info;
+  });
+  t.mock.method(fs, 'open', async (...args) => {
+    const handle = await originalOpen(...args); if (args[0] !== selectedFile) return handle;
+    const stat = handle.stat.bind(handle), close = handle.close.bind(handle);
+    handle.stat = async options => { const info = await stat(options); info.ino = options?.bigint ? opened : Number(opened); return info; };
+    handle.close = async () => { closes++; return close(); }; return handle;
+  });
+  const host = new LocalMediaHost({ tvHost: '192.168.77.80', bindAddress: '192.168.77.11', mediaRoots: [directory],
+    serverFactory: () => { listeners++; throw new Error('A changed file cannot start a listener.'); } });
+  try {
+    await assert.rejects(host.serve(file), /regular media file/);
+    assert.equal(listeners, 0); assert.equal(closes, 1);
+    await host.close(); assert.equal(closes, 1);
+  } finally { await host.close(); await fs.unlink(file); await fs.rmdir(directory); }
+});
+
+test('media replacement after open is refused before reading or listening and closes the selected handle', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-open-race-'));
+  const file = path.join(directory, 'selected.mp4'), replacement = path.join(directory, 'replacement.mp4'), old = path.join(directory, 'original.mp4');
+  await fs.writeFile(file, 'selected synthetic media'); await fs.writeFile(replacement, 'replacement synthetic media');
+  const selectedFile = await fs.realpath(file), originalOpen = fs.open; let reads = 0, closes = 0, listeners = 0;
+  t.mock.method(fs, 'open', async (target, flags, ...args) => {
+    const handle = await originalOpen(target, flags, ...args); if (target !== selectedFile) return handle;
+    const stat = handle.stat.bind(handle), read = handle.read.bind(handle), close = handle.close.bind(handle);
+    handle.stat = async options => { const info = await stat(options); await fs.rename(file, old); await fs.rename(replacement, file); return info; };
+    handle.read = (...args) => { reads++; return read(...args); };
+    handle.close = async () => { closes++; return close(); }; return handle;
+  });
+  const host = new LocalMediaHost({ tvHost: '192.168.77.80', bindAddress: '192.168.77.11', mediaRoots: [directory],
+    serverFactory: () => { listeners++; throw new Error('An unverified path cannot start a listener.'); } });
+  try {
+    await assert.rejects(host.serve(file), /regular media file/);
+    assert.equal(reads, 0); assert.equal(listeners, 0); assert.equal(closes, 1);
+    await host.close(); assert.equal(closes, 1);
+  } finally {
+    await host.close(); for (const item of [file, replacement, old]) await fs.rm(item, { force: true }); await fs.rmdir(directory);
+  }
+});
+
+test('media current leaf must remain a non-symbolic regular entry before reading or listening', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-leaf-type-'));
+  const file = path.join(directory, 'selected.mp4'); await fs.writeFile(file, 'synthetic media');
+  const selectedFile = await fs.realpath(file), originalOpen = fs.open, originalLstat = fs.lstat;
+  let kind, reads = 0, closes = 0, listeners = 0;
+  t.mock.method(fs, 'open', async (...args) => {
+    const handle = await originalOpen(...args); if (args[0] !== selectedFile) return handle;
+    const read = handle.read.bind(handle), close = handle.close.bind(handle);
+    handle.read = (...args) => { reads++; return read(...args); };
+    handle.close = async () => { closes++; return close(); }; return handle;
+  });
+  t.mock.method(fs, 'lstat', async (target, options) => {
+    const info = await originalLstat(target, options); if (target !== selectedFile) return info;
+    info.isSymbolicLink = () => kind === 'symlink'; info.isFile = () => kind !== 'directory'; return info;
+  });
+  try {
+    for (kind of ['symlink', 'directory']) {
+      const host = new LocalMediaHost({ tvHost: '192.168.77.80', bindAddress: '192.168.77.11', mediaRoots: [directory],
+        serverFactory: () => { listeners++; throw new Error('An unverified leaf cannot start a listener.'); } });
+      try { await assert.rejects(host.serve(file), /regular media file/); }
+      finally { await host.close(); }
+    }
+    assert.equal(reads, 0); assert.equal(listeners, 0); assert.equal(closes, 2);
+  } finally { await fs.unlink(file); await fs.rmdir(directory); }
+});
+
+test('media opens read-only with no-follow and nonblocking flags', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-open-flags-'));
+  const file = path.join(directory, 'selected.mp4'); await fs.writeFile(file, 'synthetic media');
+  const selectedFile = await fs.realpath(file), originalOpen = fs.open; let opens = 0;
+  t.mock.method(fs, 'open', async (target, flags, ...args) => {
+    if (target === selectedFile) {
+      opens++;
+      assert.equal(flags & (constants.O_WRONLY | constants.O_RDWR | constants.O_CREAT | constants.O_TRUNC | constants.O_APPEND), 0);
+      assert.equal(flags & (constants.O_NOFOLLOW ?? 0), constants.O_NOFOLLOW ?? 0);
+      assert.equal(flags & (constants.O_NONBLOCK ?? 0), constants.O_NONBLOCK ?? 0);
+    }
+    return originalOpen(target, flags, ...args);
+  });
+  const host = new LocalMediaHost({ tvHost: '192.168.77.80', bindAddress: '192.168.77.11', mediaRoots: [directory],
+    serverFactory: () => {
+      const server = new EventEmitter(); server.listen = (_port, _address, done) => done();
+      server.address = () => ({ port: 12345 }); server.close = done => done(); return server;
+    } });
+  try { await host.serve(file); assert.equal(opens, 1); }
+  finally { await host.close(); await fs.unlink(file); await fs.rmdir(directory); }
+});
+
+test('a FIFO media leaf is refused in a bounded child without waiting for a writer', { skip: process.platform === 'win32' }, async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lg-media-fifo-')), file = path.join(directory, 'selected.mp4');
+  try {
+    execFileSync('mkfifo', [file], { shell: false, timeout: 3000, stdio: 'pipe' });
+    const source = `import { LocalMediaHost } from ${JSON.stringify(pathToFileURL(path.resolve('lib/media-host.mjs')).href)};
+      const host = new LocalMediaHost({tvHost:'192.168.77.80',bindAddress:'192.168.77.11',mediaRoots:[process.argv[1]],serverFactory:()=>{throw Error('Unexpected listener');}});
+      try { await host.serve(process.argv[2]); process.exitCode=2; }
+      catch(error) { if(!/nonempty regular media file/.test(error.message)) throw error; }
+      finally { await host.close(); }`;
+    execFileSync(process.execPath, ['--input-type=module', '-e', source, directory, file], { shell: false, timeout: 5000, stdio: 'pipe', windowsHide: true });
+    assert.equal((await fs.lstat(file)).isFIFO(), true);
+  } finally { await fs.rm(file, { force: true }); await fs.rmdir(directory); }
 });
 
 test('media files must resolve inside approved directories and cannot override extension MIME types', async () => {

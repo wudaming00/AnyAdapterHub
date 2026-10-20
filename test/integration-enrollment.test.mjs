@@ -86,10 +86,29 @@ test('certificate replacement after open is rejected before bytes or credentials
   const mock=t.mock.method(fixtureFS,'open',async(...args)=>{
     const handle=await original(...args);if(args[0]!==file)return handle;
     const stat=handle.stat.bind(handle),read=handle.read.bind(handle);
-    handle.stat=async()=>{const info=await stat();await fixtureFS.rename(file,path.join(f.dir,'original.pem'));await fixtureFS.rename(replacement,file);return info;};
+    handle.stat=async options=>{const info=await stat(options);await fixtureFS.rename(file,path.join(f.dir,'original.pem'));await fixtureFS.rename(replacement,file);return info;};
     handle.read=(...values)=>{reads++;return read(...values);};return handle;
   });
   syncBuiltinESMExports();t.after(()=>{mock.mock.restore();syncBuiltinESMExports();});
+  await assert.rejects(enrollIntegration(f.selected,{secretStore:f.store,prompt:async()=>{prompts++;return 'unused';}}),{code:'INVALID_ENROLLMENT'});
+  assert.equal(reads,0);assert.equal(prompts,0);
+});
+
+test('certificate identity checks distinguish 64-bit inode values that round to the same Number',async t=>{
+  const f=await fixture(t),file=path.join(f.dir,'cert.pem');let reads=0,prompts=0;
+  const selected=9007199254740992n,replaced=selected+1n;
+  assert.equal(Number(selected),Number(replaced));
+  const originalOpen=fixtureFS.open,originalLstat=fixtureFS.lstat;
+  const openMock=t.mock.method(fixtureFS,'open',async(...args)=>{
+    const handle=await originalOpen(...args);if(args[0]!==file)return handle;
+    const stat=handle.stat.bind(handle),read=handle.read.bind(handle);
+    handle.stat=async options=>{const info=await stat(options);info.ino=options?.bigint?selected:Number(selected);return info;};
+    handle.read=(...values)=>{reads++;return read(...values);};return handle;
+  });
+  const statMock=t.mock.method(fixtureFS,'lstat',async(target,options)=>{
+    const info=await originalLstat(target,options);if(target===file)info.ino=options?.bigint?replaced:Number(replaced);return info;
+  });
+  syncBuiltinESMExports();t.after(()=>{openMock.mock.restore();statMock.mock.restore();syncBuiltinESMExports();});
   await assert.rejects(enrollIntegration(f.selected,{secretStore:f.store,prompt:async()=>{prompts++;return 'unused';}}),{code:'INVALID_ENROLLMENT'});
   assert.equal(reads,0);assert.equal(prompts,0);
 });
