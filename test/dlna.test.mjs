@@ -51,7 +51,9 @@ test('discovery selects only the configured TV and validates its advertised AVTr
   assert.deepEqual(await client.connect(), { connected: true, host: HOST });
   await client.connect();
   assert.equal(queries.length, 1);
-  assert.deepEqual(queries[0], { host: HOST, interfaceAddress: '192.168.30.2', durationMs: 4500 });
+  const { signal, ...query } = queries[0];
+  assert.deepEqual(query, { host: HOST, interfaceAddress: '192.168.30.2', durationMs: 4500 });
+  assert.equal(signal.aborted, false);
   client.close();
   await assert.rejects(client.connect(), { code: 'CLIENT_CLOSED' });
 });
