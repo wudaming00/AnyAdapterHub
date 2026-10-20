@@ -30,6 +30,8 @@ function certificate({ ip = [127, 0, 0, 1], from = Date.now() - 86400000, to = D
 const identity = certificate();
 const config = (extra = {}) => ({ origin: 'https://127.0.0.1:18443', certificate: identity.certificate, certificatePin: identity.certificatePin,
   expectedDeviceId: 'shelly-fixture-device', componentId: 2, loadClass: 'ordinary-plug', username: 'admin', password: 'synthetic-shelly-password', timeoutMs: 500, ...extra });
+// Synthetic server verifier for the protocol-required RFC 7616 SHA-256 Digest;
+// this does not create a password database or store a production verifier.
 const hash = text => createHash('sha256').update(text).digest('hex');
 const nonce = Buffer.from('synthetic-shelly-cryptographic-nonce').toString('base64');
 const challenge = (extra = {}) => { const values = { realm: config().expectedDeviceId, nonce, algorithm: 'SHA-256', qop: 'auth', ...extra };
@@ -53,7 +55,10 @@ function fixture(selected = config(), { info = {}, status = {}, failReadback = f
     if (parts.username !== 'admin' || parts.realm !== selected.expectedDeviceId || parts.nonce !== nonce || parts.uri !== '/rpc' ||
         parts.algorithm !== 'SHA-256' || parts.qop !== 'auth' || !/^[a-f0-9]{32}$/.test(parts.cnonce) || !/^[a-f0-9]{8}$/.test(parts.nc)) return false;
     const counter = parseInt(parts.nc, 16);
-    const expected = hash(`${hash(`admin:${selected.expectedDeviceId}:${selected.password}`)}:${nonce}:${parts.nc}:${parts.cnonce}:auth:${hash('POST:/rpc')}`);
+    const ha1 = hash(`admin:${selected.expectedDeviceId}:${selected.password}`);
+    assert.equal(authorization.includes(ha1), false);
+    assert.equal(authorization.includes(selected.password), false);
+    const expected = hash(`${ha1}:${nonce}:${parts.nc}:${parts.cnonce}:auth:${hash('POST:/rpc')}`);
     if (parts.response !== expected || counter <= lastCount || badAuth) return false;
     lastCount = counter; counts.push(counter); return true;
   }

@@ -71,5 +71,7 @@ test('Hue provider and file errors have static messages without private values',
   const saved = await protectPhilipsHueConfig({ ...await fixture(), origin: 'https://127.0.0.1:8443' }, { secretStore: store });
   const failing = { ...store, async openSecret() { throw Error('private-provider-secret'); } };
   await assert.rejects(loadPhilipsHueConfig(await savedFile(t, saved), { secretStore: failing }), error => error.code === 'CREDENTIAL_UNAVAILABLE' && !String(error).includes('private-provider'));
-  await assert.rejects(loadPhilipsHueConfig(path.join(tmpdir(), 'private-nonexistent-hue-file'), { secretStore: store }), error => error.code === 'INVALID_CONFIG' && !String(error).includes('private-nonexistent'));
+  const missingDirectory = await mkdtemp(path.join(tmpdir(), 'anyadapter-hue-missing-'));
+  t.after(() => rm(missingDirectory, { recursive: true, force: true }));
+  await assert.rejects(loadPhilipsHueConfig(path.join(missingDirectory, 'private-nonexistent-hue-file'), { secretStore: store }), error => error.code === 'INVALID_CONFIG' && !String(error).includes('private-nonexistent'));
 });
