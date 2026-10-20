@@ -1,4 +1,7 @@
 # Capability registries, executable adapters, workflows and model evidence need
-# review routing. Independent agent review is the merge gate; this ownership
-# metadata neither requires a second human account nor provides an OS sandbox.
+# independent agent review, required CI and final approval by the designated
+# repository administrator below. Agent review cannot supply that consent.
+# A sole administrator cannot self-approve a PR they authored; follow the
+# explicit owner-operation policy in docs/AGENT_REVIEW.md, never infer consent.
+# Local household enrollment needs no public PR; this is not an OS sandbox.
 * @wudaming00

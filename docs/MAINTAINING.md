@@ -1,6 +1,6 @@
 # Maintainer checks
 
-This is a development-preview checklist for review and distribution. Independent review is performed by separate agent tasks under the [agent review policy](AGENT_REVIEW.md). Contributor setup and privacy requirements are in [CONTRIBUTING.md](../CONTRIBUTING.md).
+This is a development-preview checklist for review and distribution. Separate agent tasks perform independent technical review; a designated repository administrator gives final merge approval under the [agent review policy](AGENT_REVIEW.md). Contributor setup and privacy requirements are in [CONTRIBUTING.md](../CONTRIBUTING.md). Household owners can pair and authorize supported devices locally without a public PR or repository administrator approval.
 
 ## Review one concrete change
 
@@ -10,9 +10,10 @@ This is a development-preview checklist for review and distribution. Independent
 4. Require exact model/firmware/capability evidence. Keep unknown firmware unknown and leave untested behavior unverified. Transport changes may invalidate older hardware evidence.
 5. Review public data. Screens, maps, addresses, private paths, account identifiers and both plaintext/encrypted credential files do not belong in a PR.
 6. Run checks against the final revision, with optional dependencies explicitly selected. Record platform skips and remaining failures. CodeQL success means the analysis ran, not zero findings.
-7. Obtain a real independent agent review of the final commit and publish the required `Agent Review` status from the trusted maintainer session. Security-sensitive changes need a second reviewer agent. All required CI must also pass; green static checks, author-provided receipts and administrator bypasses cannot substitute for agent review. A second human account's approval is not required.
+7. Obtain a real independent agent review of the final commit and publish the required `Agent Review` status from the trusted maintainer session. Security-sensitive changes need a second reviewer agent. All required CI must also pass; green static checks and author-provided receipts cannot substitute for agent review.
+8. Obtain the designated repository administrator's final approval of the specific PR and reviewed head SHA. Agent review and passing CI do not authorize merging or bypassing branch protection. The implementation agent must not supply administrator approval, weaken a gate or automatically merge the PR. If the sole administrator is also the PR author, follow the [explicit repository-owner operation policy](AGENT_REVIEW.md#administrator-approval); GitHub self-approval is unavailable. Without that specific authorization, leave the PR unmerged.
 
-If the source or scope changes after review, update the title/description and rerun affected checks. Follow the repository's active protections rather than relying on a stale checklist.
+If the source or scope changes after review, update the title/description, obtain fresh agent review, rerun affected checks and obtain renewed administrator approval for the final SHA. Follow the repository's active protections rather than relying on a stale checklist. No unattended cloud reviewer or automatic administrator-confirmation service is currently deployed.
 
 ## Check commands
 

@@ -34,7 +34,19 @@ Not tested / remaining limits:
 - [ ] No credentials, household identifiers, local private paths, maps, personal images or raw diagnostics are included.
 - [ ] Relevant profile, package and `npm run check:docs` checks passed. After reviewing/staging intended public files, I ran `npm run check:public` against that Git index, or explained its status.
 
+## Merge authorization
+
+Independent agent review and required CI must complete against the final head
+SHA. The designated repository administrator then gives final approval for this
+specific PR and SHA. An implementation agent cannot supply that approval,
+bypass protection or automatically merge this PR. A new commit requires fresh
+review, applicable checks and renewed administrator approval. When the sole
+administrator is also the PR author, leave the PR unmerged unless they explicitly
+authorize the specific repository-owner operation under
+[the policy](../docs/AGENT_REVIEW.md#administrator-approval).
+
 Report security vulnerabilities through the private process in
 [SECURITY.md](../SECURITY.md); do not open a public PR with undisclosed exploit
-details or sensitive data. Independent agent review of the final commit and
-required branch checks still apply; see [the policy](../docs/AGENT_REVIEW.md).
+details or sensitive data. Agent review, required branch checks and repository
+administrator approval are separate merge requirements; see
+[the policy](../docs/AGENT_REVIEW.md).
