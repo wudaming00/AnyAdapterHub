@@ -85,12 +85,6 @@ agent's visual inspection; the broker does not print or export them. The lower
 level constructor accepts `{client, journal, save}`; `save` must persist durably
 before resolving. Never replace the production broker with a plaintext journal.
 
-For the sequel, the expected title is **Disenchanted (2022)**. Disney identifies
-it as the sequel to *Enchanted* in its
-[official media kit](https://press.disneyplus.com/media-kits/disenchanted).
-The workflow must distinguish it from *Enchanted* (2007); an English search term,
-an app being foreground or an accepted content launch is not a title match.
-
 The agent must retrieve and inspect the actual authorized frame bytes before
 reporting what the screen shows. A frame ID alone is not visual observation.
 Images remain in the Hub's separate, short-lived frame storage rather than the
