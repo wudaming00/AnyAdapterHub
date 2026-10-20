@@ -12,7 +12,7 @@
 
 | # | 候选入口 | 常见类别 / 路线 | 官方 API / SDK 或社区来源 | 本地 / 云与 TLS 约束 | 首批限定功能 | 阶段 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Home Assistant | 已接入 HA 的单灯 | 官方 [REST API](https://contributors.home-assistant.io/core/internals/rest-api/)；[TLS 设置](https://www.home-assistant.io/integrations/http/) | 本地 HTTPS；Bearer；必须验证证书/固定信任，拒绝 HTTP 降级 | 默认只读；control/dimming 功能与 grant 分别限制开关/亮度；无任意服务 | P0 实验源码；硬件未验证 |
+| 1 | Home Assistant | 已接入 HA 的单灯或固定契约传感器 | 官方 [REST API](https://contributors.home-assistant.io/core/internals/rest-api/)；[TLS 设置](https://www.home-assistant.io/integrations/http/) | 本地 HTTPS；Bearer；必须验证证书/固定信任，拒绝 HTTP 降级 | 每次登记一个灯或传感器；默认只读，灯的 control/dimming 与 grant 分别限制开关/亮度；无任意服务 | P0 实验源码；硬件未验证 |
 | 2 | Philips Hue | Bridge 下的指定灯 | 官方 [API v2](https://developers.meethue.com/develop/hue-api-v2/)；[HTTPS 与 SDK 说明](https://developers.meethue.com/new-hue-api/) | 本地 HTTPS；实体按键授权、应用密钥；v2 参考需开发者登录，旧 SDK 已弃用 | 指定灯状态、开关、亮度；不开放整屋场景/娱乐流 | P0 实验源码；硬件未验证 |
 | 3 | LIFX | Wi-Fi 灯 | 官方 [LAN UDP 协议](https://lan.developer.lifx.com/docs/communicating-with-device)；[云 HTTPS 认证](https://api.developer.lifx.com/reference/authentication) | 本地 UDP 缺少本项目要求的 TLS 信任；云 HTTPS/OAuth 可评估 | 固定灯状态、显式开关、亮度；不用全灯选择器 | P2 云；P3 旧 LAN |
 | 4 | Shelly Gen2+ | 灯负载继电器、插座、计量 | 官方 [RPC](https://shelly-api-docs.shelly.cloud/gen2/General/RPCChannels/)；[HTTPS](https://shelly-api-docs.shelly.cloud/gen2/General/CustomHTTPSCertificates/) | 本地；2.0.0+ 提供入站 HTTPS，升级旧机可能仍仅 HTTP；Digest 本身不加密，必须验证 TLS | 固定组件 `Switch.GetStatus` / `Switch.Set`、只读计量；无脚本/配置 RPC | P0 实验源码；硬件未验证 |
@@ -48,7 +48,7 @@
 | 29 | Sonos | 音箱/播放器 | 官方 [OAuth 授权](https://docs.sonos.com/docs/authorize)；[本地 API 边界](https://docs.sonos.com/docs/connected-home-architecture) | 云 HTTPS/OAuth；playback-control-all scope 较宽，需公共 redirect；本地 API 并非普遍开放 | 指定播放器状态、有限播放/音量；Hub 内再次收窄权限 | P2 |
 | 30 | Denon / Marantz HEOS | 功放/音箱 | 官方 [HEOS CLI 协议](https://assets.denon.com/documentmaster/us/heos_cli_protocolspecification-version.pdf) | 本地 Telnet/1255，无 TLS；不以“局域网”代替加密 | 将来有限播放器状态；不开放原始命令 | P3 明文 |
 | 31 | Sony BRAVIA | 专业显示屏；消费机另行核实 | 官方 [PRO REST API](https://pro-bravia.sony.net/remote-display-control/rest-api/structure/) | 文档为 HTTP JSON-RPC/PSK；消费型号适用性和 HTTPS 需确认 | 精确型号的电源/输入状态只读；无系统配置 | P3 型号/TLS 待证 |
-| 32 | Plex Media Server | 个人媒体服务器 | 官方 [OpenAPI](https://developer.plex.tv/pms/)；[安全连接](https://support.plex.tv/articles/206225077-how-to-use-secure-server-connections/) | 本地/云；HTTPS 可用，token 必须放 header；固定服务器信任 | 服务器/有限会话状态；不获取观看史或假定 Companion 投放已支持 | P0 实验源码；硬件未验证 |
+| 32 | Plex Media Server | 个人媒体服务器 | 官方 [OpenAPI](https://developer.plex.tv/pms/)；[安全连接](https://support.plex.tv/articles/206225077-how-to-use-secure-server-connections/) | 固定服务器 HTTPS 身份与证书；当前公开端点无需 token，不采集凭据 | 仅 `/identity` 公开身份/在线状态；无会话、媒体库、观看史或 Companion 投放 | P0 实验源码；硬件未验证 |
 | 33 | Samsung SmartThings | 指定已接入家电/传感器 | 官方 [入门](https://developer.smartthings.com/docs/getting-started/quickstart)；[查询设备](https://developer.smartthings.com/docs/service-integrations/query-and-list-devices) | 云 HTTPS/OAuth，设备选择和 capability scope；不把全账户 token 当全屋授权 | 固定设备状态，只读家电遥测 | P2 |
 | 34 | LG ThinQ | 支持 ThinQ Connect 的家电 | 官方 [JS SDK](https://github.com/thinq-connect/jsthinqconnect)；[API 发布](https://www.lg.com/global/newsroom/news/home-appliance-solution/lg-opens-thinq-api-to-foster-smart-home-innovation/) | 云 HTTPS、地区/PAT；profile 定义不等于每台设备全功能可用 | 指定设备 profile 和状态只读；无任意 property 写入 | P0 实验源码；硬件未验证 |
 | 35 | Home Connect | 已获准联网洗衣/洗碗等家电 | 官方 [快速开始/模拟器](https://api-docs.home-connect.com/quickstart)；[OAuth scopes](https://api-docs.home-connect.com/authorization/) | 云 HTTPS/OAuth；使用 Monitor 等窄 scope；有官方模拟器 | 工作状态、剩余时间/事件只读；不启动程序、开门或加热 | P1/P2 只读 |
@@ -87,7 +87,7 @@
 
 **MQTT 适配器只实现选定 broker、固定 topic、受限数值的消息契约。** 它不解析 Tasmota、Zigbee2MQTT、ESPHome 或任何品牌的发现/命令协议，也不因此获得这些硬件的直接支持。经 broker 接收到一个值，只证明收到了该消息；必须保留数据来源、观测时间、过期时间和缓存/retained 限制，不能推断传感器当前物理值。将来每一种消息契约和硬件声明都需单独的源码审查、fixture 与精确硬件证据。
 
-**Home Assistant 桥接只覆盖明确选择的灯实体。** 连接 HA 不会开放它接入的全部家电，不允许通用服务、模板、脚本、事件、URL 或实体转发。状态读回的验证范围是 HA 报告的状态，不能自动升级为灯已产生物理效果；灯光写入有歧义时不自动重发。
+**Home Assistant 桥接只覆盖分别登记的灯或固定契约传感器实体。** 传感器仅只读；连接 HA 不会开放它接入的全部家电，不允许通用服务、模板、脚本、事件、URL 或实体转发。状态读回的验证范围是 HA 报告的状态，不能自动升级为物理效果；灯光写入有歧义时不自动重发。
 
 本轮不新增锁、门、烹饪、HVAC 写入、机器人移动、摄像画面/录像/音频能力。普通开关也必须限定非关键负载；采用显式设值而非 toggle。明文 LAN、证书绕过、凭据出现在 URL、自动信任新证书、任意 HTTP/RPC/MQTT 转发都不能为了扩大目录覆盖而默认放行。TLS 代理只保护它实际覆盖的链路。
 
