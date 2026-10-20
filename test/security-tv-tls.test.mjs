@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import https from 'node:https';
 import net from 'node:net';
-import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes, sign, X509Certificate } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocketServer } from 'ws';
@@ -13,7 +13,7 @@ import { getLocalText } from '../discover.mjs';
 
 // Fresh synthetic certificates/keys are generated in memory. No private key,
 // household address, paired TV, cloud account or persistent certificate is used.
-function certificate() {
+function certificate({ serialBytes = randomBytes(16), keys = generateKeyPairSync('rsa', { modulusLength: 2048 }) } = {}) {
   const der = (tag, ...parts) => {
     const data = Buffer.concat(parts);
     let length = data.length;
@@ -23,9 +23,11 @@ function certificate() {
   };
   const algorithm = Buffer.from('300d06092a864886f70d01010b0500', 'hex');
   const name = der(0x30, der(0x31, der(0x30, Buffer.from('0603550403', 'hex'), der(0x0c, Buffer.from('AdaptAny offline TLS fixture')))));
-  const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const utc = date => Buffer.from(date.toISOString().slice(2, 19).replace(/[-:T]/g, '') + 'Z');
-  const serial = randomBytes(16); serial[0] &= 127;
+  const serial = Buffer.from(serialBytes);
+  // DER INTEGER must be positive and minimally encoded. Masking alone can
+  // leave an unnecessary leading zero, which OpenSSL rejects intermittently.
+  serial[0] = (serial[0] & 127) || 1;
   const tbs = der(0x30, der(0xa0, der(2, Buffer.from([2]))), der(2, serial), algorithm, name,
     der(0x30, der(0x17, utc(new Date(Date.now() - 86400000))), der(0x17, utc(new Date(Date.now() + 86400000)))),
     name, keys.publicKey.export({ type: 'spki', format: 'der' }));
@@ -34,6 +36,19 @@ function certificate() {
     cert: ['-----BEGIN CERTIFICATE-----', ...raw.toString('base64').match(/.{1,64}/g), '-----END CERTIFICATE-----', ''].join('\n'),
     pin: createHash('sha256').update(raw).digest('hex') };
 }
+
+test('synthetic certificate serials stay valid for zero-leading random inputs', () => {
+  const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  for (const prefix of ['0000', '0001', '007f', '0080', '8001', 'ffff']) {
+    const serialBytes = Buffer.from(prefix + '00'.repeat(14), 'hex');
+    const identity = certificate({ serialBytes, keys });
+    const parsed = new X509Certificate(identity.cert);
+    assert.match(parsed.serialNumber, /^[0-7][0-9A-F]{31}$/);
+    assert.notEqual(parsed.serialNumber.slice(0, 2), '00');
+    const server = https.createServer(identity);
+    server.close();
+  }
+});
 
 async function fixture(t, { pointerURL } = {}) {
   const identity = certificate(); const sockets = new Set(); const requests = [], upgrades = [], messages = [], frames = [];
