@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, realpath, mkdtemp, mkdir, writeFile, rename, link, symlink, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -258,7 +260,118 @@ function verifyLink(document, link, inventory, anchorMap) {
   return null;
 }
 
+const READ_FAILURE = 'Cannot safely read a public document.';
+const regularDocument = stat => stat.isFile() && !stat.isSymbolicLink() && stat.ino > 0n && stat.nlink === 1n && stat.size <= BigInt(MAX_DOCUMENT_BYTES);
+const sameFile = (left, right) => left.dev === right.dev && left.ino === right.ino;
+async function readPublicDocument(absolute, resolvedRoot, hooks = {}) {
+  let handle;
+  try {
+    const relative = path.relative(resolvedRoot, absolute);
+    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error();
+    // Nonblocking also prevents a swapped POSIX FIFO from stalling before fstat.
+    // Opening is read-only: no bytes are read before all descriptor/path checks.
+    handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    await hooks.afterOpen?.();
+    const opened = await handle.stat({ bigint: true });
+    const current = await lstat(absolute, { bigint: true });
+    const currentResolved = await realpath(absolute);
+    // Validate the already opened inode against its canonical public path before
+    // reading. This also rejects leaf/ancestor swaps without O_NOFOLLOW support.
+    if (!regularDocument(opened) || !regularDocument(current) || !sameFile(current, opened) ||
+        path.relative(resolvedRoot, currentResolved) !== relative) throw new Error();
+    await hooks.beforeRead?.();
+    const bytes = Buffer.alloc(MAX_DOCUMENT_BYTES + 1);
+    let size = 0;
+    while (size < bytes.length) {
+      const chunk = await handle.read(bytes, size, bytes.length - size, size);
+      hooks.onRead?.(chunk.bytesRead);
+      if (!chunk.bytesRead) break;
+      size += chunk.bytesRead;
+    }
+    if (size > MAX_DOCUMENT_BYTES) throw new Error();
+    const final = await handle.stat({ bigint: true });
+    if (!regularDocument(final) || !sameFile(opened, final) || final.size !== BigInt(size)) throw new Error();
+    return bytes.toString('utf8', 0, size);
+  } catch {
+    // Do not reflect absolute paths, OS error text, replacement bytes or hook errors.
+    throw new Error(READ_FAILURE);
+  } finally {
+    if (handle) {
+      try { await handle.close(); } catch { throw new Error(READ_FAILURE); }
+    }
+  }
+}
+
+async function descriptorSelfTest() {
+  const tempBase = await realpath(tmpdir());
+  const directory = await mkdtemp(path.join(tempBase, 'anyadapter-doc-check-'));
+  const fixtureRoot = await realpath(directory);
+  const marker = 'private-synthetic-doc-bytes-not-for-output';
+  const rejectsSafely = error => error.message === READ_FAILURE && !error.message.includes(marker) && !error.message.includes(directory);
+  let serial = 0, symlinkSkipped = false;
+  async function fixture() {
+    const home = path.join(directory, 'case-' + ++serial);
+    await mkdir(home);
+    const target = path.join(home, 'guide.md'), replacement = path.join(home, 'replacement.md');
+    await writeFile(target, '# Public fixture\n'); await writeFile(replacement, marker);
+    return { home, target, replacement };
+  }
+  try {
+    const stable = await fixture();
+    assert.equal(await readPublicDocument(stable.target, fixtureRoot), '# Public fixture\n');
+    {
+      const item = await fixture(); let reads = 0;
+      await assert.rejects(readPublicDocument(item.target, fixtureRoot, {
+        afterOpen: async () => { await rename(item.target, item.target + '.old'); await rename(item.replacement, item.target); },
+        beforeRead: () => { reads++; },
+      }), rejectsSafely);
+      assert.equal(reads, 0);
+    }
+    const hardlinked = await fixture();
+    await link(hardlinked.target, hardlinked.target + '.hardlink');
+    await assert.rejects(readPublicDocument(hardlinked.target, fixtureRoot), rejectsSafely);
+    const linked = await fixture();
+    try { await symlink(linked.replacement, linked.target + '.symlink', 'file'); }
+    catch (error) { if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) symlinkSkipped = true; else throw error; }
+    if (!symlinkSkipped) await assert.rejects(readPublicDocument(linked.target + '.symlink', fixtureRoot), rejectsSafely);
+    const oversized = await fixture(); let openedOversize = false, readOversize = false;
+    await writeFile(oversized.target, Buffer.alloc(MAX_DOCUMENT_BYTES + 1, 120));
+    await assert.rejects(readPublicDocument(oversized.target, fixtureRoot, {
+      afterOpen: () => { openedOversize = true; },
+      beforeRead: () => { readOversize = true; },
+    }), rejectsSafely);
+    assert.equal(openedOversize, true);
+    assert.equal(readOversize, false);
+    {
+      const item = await fixture(); let reads = 0;
+      const other = path.join(directory, 'other-' + serial); await mkdir(other); await writeFile(path.join(other, 'guide.md'), marker);
+      await assert.rejects(readPublicDocument(item.target, fixtureRoot, {
+        afterOpen: async () => { await rename(item.home, item.home + '.old'); await symlink(other, item.home, process.platform === 'win32' ? 'junction' : 'dir'); },
+        beforeRead: () => { reads++; },
+      }), rejectsSafely);
+      assert.equal(reads, 0);
+    }
+    const growth = await fixture(); let bytesRead = 0;
+    await assert.rejects(readPublicDocument(growth.target, fixtureRoot, {
+      beforeRead: () => writeFile(growth.target, Buffer.alloc(MAX_DOCUMENT_BYTES + 128, 120)),
+      onRead: count => { bytesRead += count; },
+    }), rejectsSafely);
+    assert.equal(bytesRead, MAX_DOCUMENT_BYTES + 1);
+    const descriptor = await fixture();
+    assert.equal(await readPublicDocument(descriptor.target, fixtureRoot, {
+      beforeRead: async () => { await rename(descriptor.target, descriptor.target + '.old'); await rename(descriptor.replacement, descriptor.target); },
+    }), '# Public fixture\n');
+  } finally {
+    // Remove only this fresh, resolved fixture directory under the OS temp root.
+    if (path.dirname(fixtureRoot) !== tempBase || !path.basename(fixtureRoot).startsWith('anyadapter-doc-check-')) throw new Error('Invalid temporary fixture directory.');
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+  return { symlinkSkipped };
+}
+
 function selfTest() {
+  // A filesystem without a usable file identity cannot validate replacements.
+  assert.equal(regularDocument({ isFile: () => true, isSymbolicLink: () => false, ino: 0n, nlink: 1n, size: 1n }), false);
   const source = '# Hello, *World*!\n## 重复标题\n## 重复标题\n<a id="manual"></a>\n```md\n[ignored](missing.md)\n# hidden\n```\n[one](guide.md#hello-world) ![image](image.svg) [ref][guide]\n[guide]: guide.md#manual\n`[literal](missing.md)`\n[escaped](a\\(b\\).md)\n';
   const found = anchors(source);
   for (const value of ['hello-world', '重复标题', '重复标题-1', 'manual']) assert.ok(found.has(value));
@@ -308,7 +421,12 @@ function selfTest() {
 
 async function main() {
   selfTest();
-  if (process.argv.includes('--self-test')) { console.log('Documentation parser and public-boundary self-tests passed.'); return; }
+  const descriptorTests = await descriptorSelfTest();
+  if (descriptorTests.symlinkSkipped) console.log('Leaf file-symlink test skipped: this OS account cannot create file symlinks; ancestor junction tests passed.');
+  if (process.argv.includes('--self-test')) {
+    console.log('Documentation parser, public-boundary and descriptor race/size self-tests passed.');
+    return;
+  }
   const git = args => execFileSync('git', args, { cwd: root, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }).toString('utf8').split('\0').filter(Boolean);
   const entries = git(['ls-files', '--stage', '-z']);
   const inventory = new Set(); const documents = new Set();
@@ -337,12 +455,7 @@ async function main() {
   }
   for (const name of [...documents].sort()) {
     const absolute = path.join(root, ...name.split('/'));
-    const stat = await lstat(absolute);
-    const resolved = await realpath(absolute);
-    // Do not follow a replacement symlink or a linked ancestor into private material.
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > MAX_DOCUMENT_BYTES ||
-        path.relative(resolvedRoot, resolved) !== path.relative(root, absolute)) throw new Error('Refusing nonregular, linked or oversized public document: ' + name);
-    const source = await readFile(absolute, 'utf8');
+    const source = await readPublicDocument(absolute, resolvedRoot);
     sourceMap.set(name, source); anchorMap.set(name, anchors(source));
   }
   const failures = []; let count = 0;

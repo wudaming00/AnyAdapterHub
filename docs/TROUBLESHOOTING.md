@@ -37,11 +37,25 @@ temporary files or bypassing certificate checks.
 
 A fresh Windows profile, PowerShell/.NET startup or a busy host can make the first
 DPAPI operation slow. Each DPAPI subprocess has a bounded 45-second deadline.
-The preflight can take longer overall because it performs both protect and
-unprotect. `SECRET_STORE_FAILED` also covers a wrong Windows user, an unavailable
-profile, tampered ciphertext or the wrong purpose. Do not reset or overwrite
-credentials to hide that failure. Run under the original Windows user and review
-the encrypted enrollment/migration path.
+Only that deadline reports the fixed `SECRET_STORE_TIMEOUT` code. Other process
+errors are generic and cannot supply their own timeout code or diagnostic text.
+`SECRET_STORE_FAILED` can cover a wrong Windows user, an unavailable profile,
+tampered ciphertext or the wrong purpose. Do not reset or overwrite credentials
+to hide either failure. Run under the original Windows user and review the
+encrypted enrollment/migration path.
+
+The startup preflight uses only a fixed non-secret ephemeral value and purpose.
+It runs at most two complete protect/unprotect attempts, retrying **only**
+`SECRET_STORE_TIMEOUT`. It records each phase, attempt, elapsed time and static
+code, including the first timeout; no ciphertext, bytes or process stderr are
+printed. It reserves a fixed 185-second total budget and will not begin another
+45-second operation unless the full bound fits. Exhausted retries, budget
+exhaustion, mismatched results and every other provider failure still exit with
+an error. A successful second attempt proves that non-secret roundtrip only.
+Real credential encryption/decryption has **no automatic retry**; its per-call
+45-second deadline, CurrentUser scope, purpose binding and fail-closed behavior
+remain unchanged. A recovered self-test does not guarantee future calls will
+succeed or justify weakening credential/transport trust.
 
 `ENCRYPTED_CREDENTIAL_REQUIRED` means plaintext, malformed or obsolete credential
 material was rejected. Stop the hub and follow the explicit migration procedure;
