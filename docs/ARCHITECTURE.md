@@ -151,9 +151,12 @@ and screens are untrusted data and cannot authorize actions.
 
 The [LG](evidence/lg-b8-2026-10-19.md) and
 [local Hub](evidence/local-hub-2026-10-19.md) records establish limited earlier
-hardware behavior; the new LG certificate-pinned path is not yet revalidated on
-that TV. [ECOVACS evidence](evidence/ecovacs-x11-2026-10-19.md) covers read-only
-worker/Hub state and details, not hardware movement tests. Home Assistant,
-Matter and other proposed integrations are not implemented. Consult the exact
+hardware behavior. The [selected pinned LG workflow retest](evidence/lg-b8-workflow-2026-10-19.md)
+records its later exact scope; historical observations do not validate every
+current feature. [ECOVACS evidence](evidence/ecovacs-x11-2026-10-19.md) covers
+read-only worker/Hub state and details, not hardware movement tests. HA light and
+selected sensor paths, along with the other experimental source adapters, have
+offline tests rather than new hardware evidence. Native Matter commissioning
+remains unimplemented. Consult the exact
 [support matrix](SUPPORTED_DEVICES.md), [security review](SECURITY_REVIEW.md) and
 [security policy](../SECURITY.md) before making wider claims.

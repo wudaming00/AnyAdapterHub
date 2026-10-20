@@ -18,13 +18,15 @@ local setup action. Registry changes take effect after restarting the hub.
 
 The core provides pinned local HTTPS, SSE events, grants, capability policy,
 jobs, freshness-aware state, persistence and the client SDK. It imports no vendor
-transport at startup. A fixed registry lazily imports reviewed `lg-webos` or
-`ecovacs-x11` source only when an enabled enrolled device needs that adapter.
+transport at startup. A fixed registry lazily imports reviewed source only when
+an enabled enrolled device needs that adapter. The catalog has 13 entries; see
+[common integrations](COMMON_ADAPTERS.md) for the implemented scopes and limits.
 
 The distribution includes reviewed adapter source and documentation so that
 owners can inspect it. Third-party vendor dependencies remain optional. A clean
-`npm ci --ignore-scripts` does not install the LG `ws` transport or a Python SDK.
-The metadata catalog is available without either dependency:
+`npm ci --ignore-scripts` does not install the LG `ws` transport, MQTT.js or a
+Python SDK. The nine new common entries use built-ins without a new vendor SDK.
+The metadata catalog is available without optional dependencies:
 
 ```sh
 node device-hub.mjs adapters
@@ -35,7 +37,8 @@ The second command explicitly installs the pinned LG transport with lifecycle
 scripts disabled. It does not enable or contact a device. ECOVACS uses its
 separate [optional Python worker](../optional/ecovacs/README.md); Python package
 installation and its license obligations are separate from core installation.
-The full CI matrix explicitly installs both tested vendor dependencies.
+The full CI matrix explicitly installs the LG/MQTT transports and Python worker
+test dependencies.
 
 ## Per-device feature boundary
 

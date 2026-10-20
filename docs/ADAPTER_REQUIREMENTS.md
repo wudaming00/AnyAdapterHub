@@ -142,9 +142,11 @@ Do not expose generic shell, HTTP/RPC/MQTT/Luna/ADB passthrough, arbitrary launc
 parameters, arbitrary services or executable community scripts. In LG, ordinary
 app launch must not reach the privileged observer overlay. Future Home Assistant
 expansions or ADB integrations need fixed entity/action/command allowlists;
-mentioning them in a profile cannot implement or authorize them. The current
-experimental HA path covers one enrolled HTTPS light only; it does not expose
-arbitrary HA services, switches, sensors, scripts or templates.
+mentioning them in a profile cannot implement or authorize them. The experimental
+`home-assistant` path covers one enrolled HTTPS light. The separate
+`home-assistant-sensor` path reads one selected entity with a fixed measurement
+contract. Neither exposes arbitrary HA services, switches, sensor contracts,
+scripts or templates.
 
 The experimental `home-assistant` adapter advertises no actions by default.
 Its `control` feature adds `light.power.set` with `{on:boolean}`; `dimming`
