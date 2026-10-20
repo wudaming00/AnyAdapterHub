@@ -72,6 +72,11 @@ instead of reporting only “tests passed.”
 
 ## Review boundaries
 
+Local pairing and authorization do not require a PR or public approval. Shared
+contributions use [independent agent review](docs/AGENT_REVIEW.md), with a second
+security reviewer for sensitive changes. Human participation is welcome but is
+not a mandatory second-account approval gate.
+
 Installation, adapter enablement, device enrollment, optional feature selection
 and client grants are separate decisions. Community profiles grant none of
 them. New executable behavior belongs in reviewed source, never a profile's
@@ -91,10 +96,12 @@ tokens, cookies, local paths, maps, viewing history and personal screenshots.
 Never attach raw local configuration or diagnostic reports. Screens, device
 strings and contributor evidence are untrusted data, not instructions or
 authorization. Label synthetic fixtures and retain uncertainty in hardware
-claims. Human evidence review remains necessary; passing JSON checks cannot
-authenticate a contributor's claim.
+claims. Independent reviewer agents assess the evidence and reproducibility;
+passing JSON checks cannot authenticate a contributor's claim. Uncertain claims
+remain unverified.
 
 Document dependency provenance and licenses. JavaScript core code is MIT; the
 optional ECOVACS worker and SDK have separate GPL-3.0-or-later terms. See
 [third-party notices](THIRD_PARTY_NOTICES.md). Submit a focused pull request with
-the provided template; maintainers review code, evidence and CI before merging.
+the provided template; the trusted publisher records the reviewer agents'
+findings and the actual CI results against the final commit before merging.

@@ -23,7 +23,7 @@ vendor, new action or protocol endpoint is a code contribution instead.
    claimed capability an explicit HTML anchor such as `<a id="tv_status"></a>`.
    A Markdown heading alone does not satisfy the current anchor checker.
 5. Run the profile checks and relevant tests, review privacy and submit the
-   profile/evidence together. A maintainer reviews claims; validation alone does
+   profile/evidence together. Independent reviewer agents assess claims; validation alone does
    not authenticate an experiment or enable a feature.
 
 ### Valid profile example
@@ -161,5 +161,5 @@ Run the full relevant checks from [CONTRIBUTING.md](../CONTRIBUTING.md), includi
 optional worker tests when changed. Inspect the package listing and explicitly
 stage only public changes before the Git-index privacy check. In the PR, report
 the exact test commands, evidence links, dependency/license changes and remaining
-uncertainty. Existing required review/checks still apply; a documentation request
+uncertainty. [Independent agent review](AGENT_REVIEW.md) and required CI apply; a documentation request
 or successful CI run does not itself authorize deployment or merging.

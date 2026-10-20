@@ -25,6 +25,7 @@ Live production secret storage is currently Windows-only. Linux/macOS CI uses ex
 | Components, data flow and actual adapter/runtime contract | [Architecture](ARCHITECTURE.md) |
 | Install → enable → enroll → features → grants | [Modular architecture](MODULAR_ARCHITECTURE.md) |
 | Development, tests and contribution review | [Contributing](../CONTRIBUTING.md) |
+| Local owner consent and independent reviewer agents | [Agent review policy](AGENT_REVIEW.md) |
 | Step-by-step profile and adapter contribution | [Contributor guide](CONTRIBUTOR_GUIDE.md) |
 | Add a protocol adapter or exact-model report | [Adapter requirements](ADAPTER_REQUIREMENTS.md) |
 | Security boundaries and private reporting | [Security policy](../SECURITY.md) |

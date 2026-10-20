@@ -1,6 +1,6 @@
 # Maintainer checks
 
-This is a development-preview checklist for review and distribution. It does not replace independent security review. Contributor setup and privacy requirements are in [CONTRIBUTING.md](../CONTRIBUTING.md).
+This is a development-preview checklist for review and distribution. Independent review is performed by separate agent tasks under the [agent review policy](AGENT_REVIEW.md). Contributor setup and privacy requirements are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Review one concrete change
 
@@ -10,7 +10,7 @@ This is a development-preview checklist for review and distribution. It does not
 4. Require exact model/firmware/capability evidence. Keep unknown firmware unknown and leave untested behavior unverified. Transport changes may invalidate older hardware evidence.
 5. Review public data. Screens, maps, addresses, private paths, account identifiers and both plaintext/encrypted credential files do not belong in a PR.
 6. Run checks against the final revision, with optional dependencies explicitly selected. Record platform skips and remaining failures. CodeQL success means the analysis ran, not zero findings.
-7. Obtain the repository's required code-owner approval before merging. Do not weaken protection or treat green automation as a human approval. Administrators may have a technical bypass; its existence is not an independent review.
+7. Obtain a real independent agent review of the final commit and publish the required `Agent Review` status from the trusted maintainer session. Security-sensitive changes need a second reviewer agent. All required CI must also pass; green static checks, author-provided receipts and administrator bypasses cannot substitute for agent review. A second human account's approval is not required.
 
 If the source or scope changes after review, update the title/description and rerun affected checks. Follow the repository's active protections rather than relying on a stale checklist.
 
@@ -33,7 +33,7 @@ node scripts/check-security-runtime.mjs
 
 After explicitly staging the intended public files, run `npm run check:public` and `git diff --cached --check`. The source privacy check reads staged bytes; documentation checks read the public working tree. Verify both represent the change you intend to ship.
 
-Inspect the actual package dry-run file list. An allowlisted source path can still contain a secret; automated matching supplements human inspection. Never stage a live Hub home, enrollment, raw diagnostic, personal screenshot or lab payload.
+Inspect the actual package dry-run file list. An allowlisted source path can still contain a secret; automated matching supplements independent review. Never stage a live Hub home, enrollment, raw diagnostic, personal screenshot or lab payload.
 
 ## Hardware and security evidence
 

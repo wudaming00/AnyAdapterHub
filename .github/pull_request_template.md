@@ -36,4 +36,5 @@ Not tested / remaining limits:
 
 Report security vulnerabilities through the private process in
 [SECURITY.md](../SECURITY.md); do not open a public PR with undisclosed exploit
-details or sensitive data. Required human review and branch checks still apply.
+details or sensitive data. Independent agent review of the final commit and
+required branch checks still apply; see [the policy](../docs/AGENT_REVIEW.md).

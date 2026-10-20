@@ -44,4 +44,4 @@ for (const entry of entries) {
   count++;
 }
 console.log(`Public Git index checked: ${count} text files; private paths, links, known local credentials and common secret patterns rejected.`);
-console.log('This bounded check supplements human review; it does not prove that every possible secret is absent.');
+console.log('This bounded check supplements independent review; it does not prove that every possible secret is absent.');

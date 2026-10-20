@@ -27,7 +27,7 @@ node device-hub.mjs help
 node device-hub.mjs adapters
 ```
 
-The install does not fetch `ws`, Python or vendor SDKs. The catalog describes reviewed source; it does not discover, pair or enable devices. There is no published npm package or install script to fetch from an unrelated name.
+The install does not fetch `ws`, Python or vendor SDKs. The catalog describes reviewed source; it does not discover, pair or enable devices. There is no published npm package or install script to fetch from an unrelated name. Local enrollment requires the owner's consent, not a PR or another user's approval. Shared contributions use [independent agent review](AGENT_REVIEW.md).
 
 ## Start an empty hub
 

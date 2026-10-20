@@ -165,7 +165,8 @@ For each verified or unsupported capability, provide exact configuration, date,
 safe procedure, request acceptance, readback/effect, restoration and limitations.
 Unknown firmware stays unknown. Label fixture results and do not present them
 as hardware tests. Sanitized written evidence can be mistaken or fabricated:
-human review must assess reproducibility and leave uncertain claims unverified.
+independent reviewer agents must assess reproducibility and leave uncertain
+claims unverified under the [agent review policy](AGENT_REVIEW.md).
 Never ask a contributor to disclose credentials, maps or personal images to
 strengthen evidence.
 
