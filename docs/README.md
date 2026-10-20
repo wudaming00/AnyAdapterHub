@@ -16,6 +16,7 @@ AnyAdapter Hub is a source-distributed development preview. Read the setup and s
 | Missing dependencies, denied access, standby and certificate failures | [Troubleshooting](TROUBLESHOOTING.md) |
 | Exact hardware/firmware and verification limits | [Supported devices](SUPPORTED_DEVICES.md) |
 | Experimental HTTPS light and MQTT numeric sensor enrollment | [Popular adapters](POPULAR_ADAPTERS.md) |
+| Hue, Shelly, cloud sensors, HA sensors, openHAB and Plex | [Common integrations](COMMON_ADAPTERS.md) |
 | Optional ECOVACS cloud worker and existing enrollment prerequisite | [ECOVACS X11](ECOVACS_X11.md) |
 | Optional component installation | [LG transport](../optional/lg-webos/README.md), [ECOVACS worker](../optional/ecovacs/README.md) |
 

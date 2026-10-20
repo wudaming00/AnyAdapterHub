@@ -11,6 +11,7 @@ const grant = overrides => ({ id: 'grant-1', label: 'Living room controls', devi
 const check = (name, args, deviceConfig = DEVICE) => validateAction(name, args, { deviceConfig });
 const throws = (fn, code) => assert.throws(fn, error => error instanceof HubPolicyError && (!code || error.code === code));
 const EXAMPLES = {
+  'switch.power.set': { on: false },
   'light.power.set': { on: true }, 'light.brightness.set': { brightness: 50 },
   'audio.volume.set': { volume: 25 }, 'audio.mute.set': { muted: false },
   'app.list': {},
@@ -26,7 +27,7 @@ const EXAMPLES = {
 };
 
 test('registry contains only fixed reviewed actions and immutable strict JSON schemas', () => {
-  assert.equal(Object.keys(ACTIONS).length, 31);
+  assert.equal(Object.keys(ACTIONS).length, 32);
   assert.deepEqual(Object.keys(EXAMPLES).sort(), Object.keys(ACTIONS).sort());
   assert.deepEqual(READ_CAPABILITIES, ['state.read', 'events.read', 'screen.read']);
   for (const definition of Object.values(ACTIONS)) {

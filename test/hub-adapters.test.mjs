@@ -13,7 +13,7 @@ const loader = new URL('./fixtures/block-ws-loader.mjs', import.meta.url).href;
 
 test('reviewed adapter catalog is immutable and cannot supply executable extensions', () => {
   const catalog = adapterMetadata();
-  assert.deepEqual(catalog.map(item => item.id), ['lg-webos', 'ecovacs-x11', 'home-assistant', 'mqtt-tls']);
+  assert.deepEqual(catalog.map(item => item.id), ['lg-webos', 'ecovacs-x11', 'home-assistant', 'mqtt-tls', 'philips-hue', 'shelly-gen2', 'switchbot', 'lg-thinq', 'home-assistant-sensor', 'openhab', 'plex', 'awair', 'purpleair']);
   assert.ok(Object.isFrozen(catalog));
   assert.ok(Object.isFrozen(catalog[0].features));
   assert.throws(() => catalog[0].features.push('shell'));
@@ -50,7 +50,7 @@ test('core import and CLI help work without ws; selecting LG gives an actionable
   const source = `
     import assert from 'node:assert/strict';
     const { adapterMetadata, createAdapter } = await import('./lib/hub/adapters.mjs');
-    assert.equal(adapterMetadata().length, 4);
+    assert.equal(adapterMetadata().length, 13);
     await assert.rejects(createAdapter({adapterName:'lg-webos',id:'fixture-tv',config:{}}), {
       code:'ADAPTER_DEPENDENCY_MISSING',
       message:'LG webOS is optional. Run npm run adapter:lg:install before enabling it.'

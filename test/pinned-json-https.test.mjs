@@ -37,6 +37,14 @@ test('a denied dispatch after TLS sends zero HTTP requests',async t=>{
   await assert.rejects(f.client.request(request({beforeDispatch(){throw denial;}})),error=>error===denial);
   assert.equal(f.seen.length,0);
 });
+
+test('dispatch callbacks require synchronous void authorization and never evaluate returned thenables',async t=>{
+  const f=await fixture(t);let touched=0;
+  for(const beforeDispatch of [async()=>{},async()=>{throw new Error('private denial');},()=>true,()=>({get then(){touched++;return()=>{};}}),()=>new Proxy({},{get(){touched++;}})]){
+    await assert.rejects(f.client.request(request({beforeDispatch})),e=>e.code==='INVALID_DISPATCH_CALLBACK'&&e.dispatched===false);
+  }
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(touched,0);assert.equal(f.seen.length,0);
+});
 test('certificate substitution never receives the authorization header',async t=>{
   const f=await fixture(t), legitimate=await f.manager.createHubIdentity();
   const client=createPinnedJsonClient({...f.config,certificate:legitimate.certificate,certificatePin:legitimate.certificatePin});t.after(()=>client.close());
